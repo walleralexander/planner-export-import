@@ -1,5 +1,10 @@
 # Microsoft Planner Export/Import Tool
 
+![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?logo=powershell)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
+![Microsoft Graph](https://img.shields.io/badge/Microsoft%20Graph-API-orange)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
+
 (c) Alexander Waller
 Mit freundlicher Unterstützung von Claude Code!
 
