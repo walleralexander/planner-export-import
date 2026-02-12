@@ -203,3 +203,5 @@ PlannerExport_20260209_143000/
 ## Lizenz & Support
 
 Created by Alexander Waller, February 2026.
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
