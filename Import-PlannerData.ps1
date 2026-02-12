@@ -160,7 +160,9 @@ function Resolve-UserId {
                     return $user.id
                 }
             }
-            catch { }
+            catch {
+                Write-Log "  Warnung: Benutzer konnte nicht per UPN gefunden werden: $upn" "WARN"
+            }
         }
 
         if ($mail -and $mail -ne $upn) {
@@ -170,7 +172,9 @@ function Resolve-UserId {
                     return $user.id
                 }
             }
-            catch { }
+            catch {
+                Write-Log "  Warnung: Benutzer konnte nicht per Mail gefunden werden: $mail" "WARN"
+            }
         }
     }
 
@@ -181,7 +185,9 @@ function Resolve-UserId {
             return $user.id
         }
     }
-    catch { }
+    catch {
+        Write-Log "  Warnung: Benutzer konnte nicht per ID gefunden werden: $OldUserId" "WARN"
+    }
 
     return $null
 }

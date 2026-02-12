@@ -28,9 +28,6 @@ param(
     [string[]]$GroupIds,
 
     [Parameter(Mandatory = $false)]
-    [switch]$ExportAllMyPlans,
-
-    [Parameter(Mandatory = $false)]
     [switch]$IncludeCompletedTasks
 )
 
@@ -213,7 +210,8 @@ function Export-PlanDetails {
         # Optional: Abgeschlossene Tasks filtern
         if (-not $IncludeCompletedTasks) {
             $completedCount = ($allTasks | Where-Object { $_.percentComplete -eq 100 }).Count
-            Write-Log "  $completedCount abgeschlossene Tasks werden mitexportiert (verwende -IncludeCompletedTasks zum Filtern)"
+            Write-Log "  $completedCount abgeschlossene Tasks werden übersprungen (verwende -IncludeCompletedTasks um diese einzubeziehen)"
+            $allTasks = $allTasks | Where-Object { $_.percentComplete -ne 100 }
         }
 
         $planData.Tasks = $allTasks
