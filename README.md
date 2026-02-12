@@ -5,6 +5,10 @@ Mit freundlicher Unterstützung von Claude Code!
 
 ---
 
+> ⚠️ **WICHTIG:** Bitte lesen Sie die [WARNING.md](WARNING.md) für wichtige Hinweise zu Haftungsausschluss und Testumgebung!
+
+---
+
 ## Übersicht
 
 Dieses Toolset ermöglicht den vollständigen Export und Import von Microsoft Planner-Daten
