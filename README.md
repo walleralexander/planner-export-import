@@ -16,8 +16,8 @@ Mit freundlicher Unterstützung von Claude Code!
 
 ## Übersicht
 
-Dieses Toolset ermöglicht den vollständigen Export und Import von Microsoft Planner-Daten
-über die Microsoft Graph API. Es wurde speziell für den Lizenzwechsel erstellt, um 
+Dieses Toolset ermöglicht den fast vollständigen Export und Import von Microsoft Planner-Daten
+über die Microsoft Graph API. Es wurde speziell für den Lizenzwechsel erstellt, um
 Datenverluste zu vermeiden.
 
 ### Was wird exportiert/importiert?
