@@ -1,16 +1,16 @@
-<#
+﻿<#
 .SYNOPSIS
-    Exportiert alle Microsoft Planner-Daten (Pläne, Buckets, Tasks, Details) via Microsoft Graph API.
+    Exportiert alle Microsoft Planner-Daten (PlÃ¤ne, Buckets, Tasks, Details) via Microsoft Graph API.
 
 .DESCRIPTION
-    Dieses Script liest alle Planner-Pläne aus, die dem angemeldeten Benutzer bzw. den
-    angegebenen Microsoft 365 Gruppen zugeordnet sind, und exportiert sämtliche Daten
-    (Buckets, Tasks inkl. Checklisten, Anhänge, Beschreibungen, Zuweisungen etc.)
-    in JSON-Dateien, die für einen späteren Re-Import verwendet werden können.
+    Dieses Script liest alle Planner-PlÃ¤ne aus, die dem angemeldeten Benutzer bzw. den
+    angegebenen Microsoft 365 Gruppen zugeordnet sind, und exportiert sÃ¤mtliche Daten
+    (Buckets, Tasks inkl. Checklisten, AnhÃ¤nge, Beschreibungen, Zuweisungen etc.)
+    in JSON-Dateien, die fÃ¼r einen spÃ¤teren Re-Import verwendet werden kÃ¶nnen.
 
 .NOTES
     Voraussetzungen:
-    - PowerShell 5.1 oder höher (empfohlen: PowerShell 7+)
+    - PowerShell 5.1 oder hÃ¶her (empfohlen: PowerShell 7+)
     - Microsoft.Graph PowerShell Module
       Install-Module Microsoft.Graph -Scope CurrentUser
     - Berechtigungen: Group.Read.All, Tasks.Read, Tasks.ReadWrite, User.Read
@@ -54,7 +54,7 @@ function Write-PlannerLog {
 function Connect-ToGraph {
     Write-PlannerLog "Verbinde mit Microsoft Graph..."
     try {
-        # Prüfe ob bereits verbunden
+        # PrÃ¼fe ob bereits verbunden
         $context = Get-MgContext
         if ($null -eq $context) {
             try {
@@ -62,14 +62,14 @@ function Connect-ToGraph {
                 Connect-MgGraph -Scopes "Group.Read.All", "Tasks.Read", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All" -NoWelcome -ErrorAction Stop
             }
             catch {
-                # Fallback auf Device Code Flow wenn Browser-Auth fehlschlägt
+                # Fallback auf Device Code Flow wenn Browser-Auth fehlschlÃ¤gt
                 Write-PlannerLog "Browser-Authentifizierung fehlgeschlagen, verwende Device Code Flow..." "WARN"
                 Connect-MgGraph -Scopes "Group.Read.All", "Tasks.Read", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All" -UseDeviceCode -NoWelcome
             }
         }
         $context = Get-MgContext
         if ($null -eq $context -or [string]::IsNullOrEmpty($context.Account)) {
-            throw "Keine gültige Verbindung hergestellt"
+            throw "Keine gÃ¼ltige Verbindung hergestellt"
         }
         Write-PlannerLog "Verbunden als: $($context.Account)" "OK"
         return $true
@@ -81,16 +81,16 @@ function Connect-ToGraph {
 }
 
 function Get-AllUserPlans {
-    Write-PlannerLog "Lade alle Pläne des Benutzers..."
+    Write-PlannerLog "Lade alle PlÃ¤ne des Benutzers..."
     $plans = @()
 
     try {
-        # Methode 1: Über die Gruppen des Benutzers
+        # Methode 1: Ãœber die Gruppen des Benutzers
         $myGroups = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/me/memberOf/microsoft.graph.group?`$filter=groupTypes/any(g:g eq 'Unified')&`$select=id,displayName" -OutputType PSObject
-        
+
         if ($myGroups.value) {
             foreach ($group in $myGroups.value) {
-                Write-PlannerLog "Prüfe Gruppe: $($group.displayName) ($($group.id))"
+                Write-PlannerLog "PrÃ¼fe Gruppe: $($group.displayName) ($($group.id))"
                 try {
                     $groupPlans = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/groups/$($group.id)/planner/plans" -OutputType PSObject
                     if ($groupPlans.value) {
@@ -103,32 +103,32 @@ function Get-AllUserPlans {
                     }
                 }
                 catch {
-                    Write-PlannerLog "  Keine Pläne in Gruppe $($group.displayName) oder kein Zugriff" "WARN"
+                    Write-PlannerLog "  Keine PlÃ¤ne in Gruppe $($group.displayName) oder kein Zugriff" "WARN"
                 }
             }
         }
 
-        # Methode 2: Direkt über /me/planner/plans (falls unterstützt)
+        # Methode 2: Direkt Ã¼ber /me/planner/plans (falls unterstÃ¼tzt)
         try {
             $myPlans = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/me/planner/plans" -OutputType PSObject
             if ($myPlans.value) {
                 foreach ($plan in $myPlans.value) {
                     if ($plans.id -notcontains $plan.id) {
                         $plans += $plan
-                        Write-PlannerLog "  Zusätzlicher Plan gefunden: $($plan.title)" "OK"
+                        Write-PlannerLog "  ZusÃ¤tzlicher Plan gefunden: $($plan.title)" "OK"
                     }
                 }
             }
         }
         catch {
-            Write-PlannerLog "Direkter Planzugriff nicht verfügbar, nutze Gruppen-Methode" "WARN"
+            Write-PlannerLog "Direkter Planzugriff nicht verfÃ¼gbar, nutze Gruppen-Methode" "WARN"
         }
     }
     catch {
-        Write-PlannerLog "Fehler beim Laden der Pläne: $_" "ERROR"
+        Write-PlannerLog "Fehler beim Laden der PlÃ¤ne: $_" "ERROR"
     }
 
-    Write-PlannerLog "Insgesamt $($plans.Count) Pläne gefunden"
+    Write-PlannerLog "Insgesamt $($plans.Count) PlÃ¤ne gefunden"
     return $plans
 }
 
@@ -137,7 +137,7 @@ function Get-PlansByGroupIds {
     $plans = @()
 
     foreach ($groupId in $GroupIds) {
-        Write-PlannerLog "Lade Pläne für Gruppe: $groupId"
+        Write-PlannerLog "Lade PlÃ¤ne fÃ¼r Gruppe: $groupId"
         try {
             # Gruppenname laden
             $group = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/groups/$groupId`?`$select=id,displayName" -OutputType PSObject
@@ -153,7 +153,7 @@ function Get-PlansByGroupIds {
             }
         }
         catch {
-            Write-PlannerLog "Fehler beim Laden der Pläne für Gruppe $groupId : $_" "ERROR"
+            Write-PlannerLog "Fehler beim Laden der PlÃ¤ne fÃ¼r Gruppe $groupId : $_" "ERROR"
         }
     }
 
@@ -180,7 +180,7 @@ function Export-PlanDetails {
         $planData.Categories = $planDetails.categoryDescriptions
         $planData["PlanDetails"] = $planDetails
 
-        # ETag speichern für späteren Import
+        # ETag speichern fÃ¼r spÃ¤teren Import
         if ($planDetails.'@odata.etag') {
             $planData["PlanDetailsEtag"] = $planDetails.'@odata.etag'
         }
@@ -203,7 +203,7 @@ function Export-PlanDetails {
     try {
         $allTasks = @()
         $tasksUri = "https://graph.microsoft.com/v1.0/planner/plans/$($Plan.id)/tasks"
-        
+
         do {
             $tasksResponse = Invoke-MgGraphRequest -Method GET -Uri $tasksUri -OutputType PSObject
             if ($tasksResponse.value) {
@@ -215,7 +215,7 @@ function Export-PlanDetails {
         # Optional: Abgeschlossene Tasks filtern
         if (-not $IncludeCompletedTasks) {
             $completedCount = ($allTasks | Where-Object { $_.percentComplete -eq 100 }).Count
-            Write-PlannerLog "  $completedCount abgeschlossene Tasks werden übersprungen (verwende -IncludeCompletedTasks um diese einzubeziehen)"
+            Write-PlannerLog "  $completedCount abgeschlossene Tasks werden Ã¼bersprungen (verwende -IncludeCompletedTasks um diese einzubeziehen)"
             $allTasks = $allTasks | Where-Object { $_.percentComplete -ne 100 }
         }
 
@@ -227,8 +227,8 @@ function Export-PlanDetails {
         $counter = 0
         foreach ($task in $allTasks) {
             $counter++
-            Write-Progress -Activity "Lade Task-Details für '$($Plan.title)'" -Status "Task $counter von $($allTasks.Count)" -PercentComplete (($counter / $allTasks.Count) * 100)
-            
+            Write-Progress -Activity "Lade Task-Details fÃ¼r '$($Plan.title)'" -Status "Task $counter von $($allTasks.Count)" -PercentComplete (($counter / $allTasks.Count) * 100)
+
             try {
                 $detail = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/planner/tasks/$($task.id)/details" -OutputType PSObject
                 $detail | Add-Member -NotePropertyName "taskId" -NotePropertyValue $task.id -Force
@@ -249,7 +249,7 @@ function Export-PlanDetails {
         Write-PlannerLog "  Fehler beim Laden der Tasks: $_" "ERROR"
     }
 
-    # Benutzerinfo für Zuweisungen auflösen
+    # Benutzerinfo fÃ¼r Zuweisungen auflÃ¶sen
     $userIds = @()
     foreach ($task in $planData.Tasks) {
         if ($task.assignments) {
@@ -276,7 +276,7 @@ function Export-PlanDetails {
             }
         }
         catch {
-            Write-PlannerLog "    Konnte Benutzer $userId nicht auflösen" "WARN"
+            Write-PlannerLog "    Konnte Benutzer $userId nicht auflÃ¶sen" "WARN"
             $userMap[$userId] = @{ Id = $userId; DisplayName = "Unbekannt"; UserPrincipalName = ""; Mail = "" }
         }
     }
@@ -295,7 +295,7 @@ function Export-PlanDetails {
     }
     Write-PlannerLog "  Plan exportiert nach: $planFilePath" "OK"
 
-    # Zusätzlich eine lesbare Zusammenfassung erstellen
+    # ZusÃ¤tzlich eine lesbare Zusammenfassung erstellen
     Export-ReadableSummary -PlanData $planData -OutputPath (Join-Path $PlanExportPath "$planFileName`_Zusammenfassung.txt")
 
     return $planData
@@ -345,23 +345,23 @@ function Export-ReadableSummary {
                     100 { "[x] Abgeschlossen" }
                     default { "[$($task.percentComplete)%]" }
                 }
-                
+
                 [void]$sb.AppendLine("")
                 [void]$sb.AppendLine("  $status $($task.title)")
 
-                # Priorität
+                # PrioritÃ¤t
                 $priority = switch ($task.priority) {
                     0 { "Dringend" }
                     1 { "Wichtig" }
                     2 { "Mittel" }
                     default { "Niedrig" }
                 }
-                [void]$sb.AppendLine("    Priorität: $priority")
+                [void]$sb.AppendLine("    PrioritÃ¤t: $priority")
 
-                # Fälligkeitsdatum
+                # FÃ¤lligkeitsdatum
                 if ($task.dueDateTime) {
                     $dueDate = [DateTime]::Parse($task.dueDateTime).ToString("dd.MM.yyyy")
-                    [void]$sb.AppendLine("    Fällig am: $dueDate")
+                    [void]$sb.AppendLine("    FÃ¤llig am: $dueDate")
                 }
 
                 # Startdatum
@@ -424,7 +424,7 @@ function Export-ReadableSummary {
                     if ($detail.references) {
                         $refs = $detail.references.PSObject.Properties
                         if ($refs.Count -gt 0) {
-                            [void]$sb.AppendLine("    Anhänge/Links:")
+                            [void]$sb.AppendLine("    AnhÃ¤nge/Links:")
                             $refs | ForEach-Object {
                                 $ref = $_.Value
                                 $url = $_.Name -replace '%2F', '/' -replace '%3A', ':'
@@ -486,7 +486,7 @@ if (-not (Test-Path $ExportPath)) {
 }
 Write-PlannerLog "Export-Verzeichnis: $ExportPath"
 
-# Microsoft.Graph Modul prüfen
+# Microsoft.Graph Modul prÃ¼fen
 if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Planner)) {
     Write-PlannerLog "Microsoft.Graph Module werden installiert..." "WARN"
     Install-Module Microsoft.Graph -Scope CurrentUser -Force -AllowClobber
@@ -496,11 +496,11 @@ Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
 
 # Verbinden
 if (-not (Connect-ToGraph)) {
-    Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph möglich." "ERROR"
+    Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph mÃ¶glich." "ERROR"
     exit 1
 }
 
-# Pläne laden
+# PlÃ¤ne laden
 $plans = @()
 if ($GroupIds) {
     $plans = Get-PlansByGroupIds -GroupIds $GroupIds
@@ -510,20 +510,20 @@ else {
 }
 
 if ($plans.Count -eq 0) {
-    Write-PlannerLog "Keine Pläne gefunden. Überprüfen Sie die Berechtigungen." "ERROR"
+    Write-PlannerLog "Keine PlÃ¤ne gefunden. ÃœberprÃ¼fen Sie die Berechtigungen." "ERROR"
     exit 1
 }
 
-# Übersicht anzeigen
+# Ãœbersicht anzeigen
 Write-Host ""
-Write-Host "Gefundene Pläne:" -ForegroundColor Yellow
+Write-Host "Gefundene PlÃ¤ne:" -ForegroundColor Yellow
 for ($i = 0; $i -lt $plans.Count; $i++) {
     $groupName = if ($plans[$i].groupDisplayName) { " (Gruppe: $($plans[$i].groupDisplayName))" } else { "" }
     Write-Host "  [$($i+1)] $($plans[$i].title)$groupName"
 }
 Write-Host ""
 
-# Alle Pläne exportieren
+# Alle PlÃ¤ne exportieren
 $exportSummary = @()
 foreach ($plan in $plans) {
     Write-Host ""
@@ -537,7 +537,7 @@ foreach ($plan in $plans) {
     }
 }
 
-# Gesamtübersicht als Index-Datei
+# GesamtÃ¼bersicht als Index-Datei
 $indexData = @{
     ExportDate    = (Get-Date).ToString("o")
     ExportedBy    = (Get-MgContext).Account
@@ -560,16 +560,16 @@ Write-Host "  EXPORT ABGESCHLOSSEN" -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Verzeichnis: $ExportPath" -ForegroundColor White
-Write-Host "  Pläne:       $($plans.Count)" -ForegroundColor White
+Write-Host "  PlÃ¤ne:       $($plans.Count)" -ForegroundColor White
 $totalTasks = ($exportSummary | Measure-Object -Property Tasks -Sum).Sum
 Write-Host "  Tasks:       $totalTasks" -ForegroundColor White
 Write-Host ""
 Write-Host "  Dateien pro Plan:" -ForegroundColor Yellow
-Write-Host "    - <PlanName>.json         (Strukturierte Daten für Import)" -ForegroundColor Gray
-Write-Host "    - <PlanName>_Zusammenfassung.txt  (Lesbare Übersicht)" -ForegroundColor Gray
-Write-Host "    - _ExportIndex.json       (Gesamtübersicht)" -ForegroundColor Gray
+Write-Host "    - <PlanName>.json         (Strukturierte Daten fÃ¼r Import)" -ForegroundColor Gray
+Write-Host "    - <PlanName>_Zusammenfassung.txt  (Lesbare Ãœbersicht)" -ForegroundColor Gray
+Write-Host "    - _ExportIndex.json       (GesamtÃ¼bersicht)" -ForegroundColor Gray
 Write-Host ""
-Write-PlannerLog "Export abgeschlossen. $($plans.Count) Pläne mit $totalTasks Tasks exportiert." "OK"
+Write-PlannerLog "Export abgeschlossen. $($plans.Count) PlÃ¤ne mit $totalTasks Tasks exportiert." "OK"
 
 Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
 
