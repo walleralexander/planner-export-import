@@ -206,6 +206,33 @@ PlannerExport_20260209_143000/
 
 ---
 
+## Tests
+
+This project includes a comprehensive test suite with 59 unit tests covering both Export and Import functionality.
+
+### Running Tests
+
+```powershell
+# Quick test run
+Invoke-Pester -Path ./tests
+
+# Or use the test runner with detailed output
+pwsh ./tests/Run-Tests.ps1 -Detailed
+```
+
+### Test Coverage
+
+- **Export-PlannerData.ps1**: 21 tests covering logging, data export, file handling, and error scenarios
+- **Import-PlannerData.ps1**: 38 tests covering import logic, user mapping, dry-run mode, and data restoration
+- **Integration Tests**: Manual test scenarios documented for real-world validation
+
+For detailed information, see:
+- [tests/README.md](tests/README.md) - Test documentation and setup
+- [tests/USAGE.md](tests/USAGE.md) - Practical examples and CI/CD integration
+- [tests/Integration-Tests.ps1](tests/Integration-Tests.ps1) - Manual testing scenarios
+
+---
+
 ## Lizenz & Support
 
 Created by Alexander Waller, February 2026.
