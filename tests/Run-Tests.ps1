@@ -90,7 +90,15 @@ Import-Module Pester -MinimumVersion 5.0.0
 
 # Get test directory
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
-$testsPath = Join-Path $scriptPath "tests"
+
+# If we're already in the tests directory, use current directory
+# Otherwise look for tests subdirectory
+if ((Split-Path -Leaf $scriptPath) -eq "tests") {
+    $testsPath = $scriptPath
+}
+else {
+    $testsPath = Join-Path $scriptPath "tests"
+}
 
 if (-not (Test-Path $testsPath)) {
     Write-Host "Tests directory not found: $testsPath" -ForegroundColor Red
@@ -146,6 +154,7 @@ if ($Coverage) {
 Write-Host "Running tests..." -ForegroundColor Cyan
 Write-Host ""
 
+$config.Run.PassThru = $true
 $result = Invoke-Pester -Configuration $config
 
 # Display summary
@@ -155,26 +164,32 @@ Write-Host "  Test Summary" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 
-$totalTests = $result.Tests.Count
-$passedTests = ($result.Tests | Where-Object { $_.Result -eq 'Passed' }).Count
-$failedTests = ($result.Tests | Where-Object { $_.Result -eq 'Failed' }).Count
-$skippedTests = ($result.Tests | Where-Object { $_.Result -eq 'Skipped' }).Count
+# Pester 5.x result structure
+if ($result) {
+    $totalTests = if ($result.TotalCount) { $result.TotalCount } else { 0 }
+    $passedTests = if ($result.PassedCount) { $result.PassedCount } else { 0 }
+    $failedTests = if ($result.FailedCount) { $result.FailedCount } else { 0 }
+    $skippedTests = if ($result.SkippedCount) { $result.SkippedCount } else { 0 }
+    
+    Write-Host "Total Tests:   $totalTests" -ForegroundColor White
+    Write-Host "Passed:        $passedTests" -ForegroundColor Green
+    if ($failedTests -gt 0) {
+        Write-Host "Failed:        $failedTests" -ForegroundColor Red
+    }
+    else {
+        Write-Host "Failed:        $failedTests" -ForegroundColor Green
+    }
+    if ($skippedTests -gt 0) {
+        Write-Host "Skipped:       $skippedTests" -ForegroundColor Yellow
+    }
 
-Write-Host "Total Tests:   $totalTests" -ForegroundColor White
-Write-Host "Passed:        $passedTests" -ForegroundColor Green
-if ($failedTests -gt 0) {
-    Write-Host "Failed:        $failedTests" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Duration:      $($result.Duration)" -ForegroundColor Gray
+    Write-Host ""
 }
 else {
-    Write-Host "Failed:        $failedTests" -ForegroundColor Green
+    Write-Host "No test results available" -ForegroundColor Red
 }
-if ($skippedTests -gt 0) {
-    Write-Host "Skipped:       $skippedTests" -ForegroundColor Yellow
-}
-
-Write-Host ""
-Write-Host "Duration:      $($result.Duration)" -ForegroundColor Gray
-Write-Host ""
 
 # Code coverage summary
 if ($Coverage -and $result.CodeCoverage) {
@@ -199,7 +214,7 @@ if ($Coverage -and $result.CodeCoverage) {
 }
 
 # Exit code based on test results
-if ($failedTests -gt 0) {
+if ($result -and $result.FailedCount -gt 0) {
     Write-Host "Tests FAILED!" -ForegroundColor Red
     exit 1
 }
