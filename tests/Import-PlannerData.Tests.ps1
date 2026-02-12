@@ -5,7 +5,7 @@
 .DESCRIPTION
     This test file uses Pester framework to test the Import-PlannerData script.
     Tests include:
-    - Function unit tests (Write-Log, Resolve-UserId, Invoke-GraphWithRetry)
+    - Function unit tests (Write-PlannerLog, Resolve-UserId, Invoke-GraphWithRetry)
     - Mock-based tests for Graph API interactions
     - Edge case and error handling tests
     - User mapping and resolution tests
@@ -20,7 +20,7 @@ BeforeAll {
     # Define test helper functions that simulate the actual script behavior
     # These are simplified versions for unit testing without external dependencies
     
-    function Write-Log {
+    function Write-PlannerLog {
         param([string]$Message, [string]$Level = "INFO")
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         $logEntry = "[$timestamp] [$Level] $Message"
@@ -99,7 +99,7 @@ BeforeAll {
             [string]$TargetGroupId
         )
 
-        Write-Log "Lade Export-Datei: $JsonFilePath"
+        Write-PlannerLog "Lade Export-Datei: $JsonFilePath"
         $planData = Get-Content $JsonFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
 
         $planTitle = $planData.Plan.title
@@ -109,16 +109,16 @@ BeforeAll {
         $groupId = if ($TargetGroupId) { $TargetGroupId } else { $originalGroupId }
 
         if (-not $groupId) {
-            Write-Log "Keine Zielgruppe angegeben und keine Original-Gruppe gefunden!" "ERROR"
+            Write-PlannerLog "Keine Zielgruppe angegeben und keine Original-Gruppe gefunden!" "ERROR"
             return $null
         }
 
-        Write-Log "Erstelle Plan '$planTitle' in Gruppe $groupId..."
+        Write-PlannerLog "Erstelle Plan '$planTitle' in Gruppe $groupId..."
 
         if ($DryRun) {
-            Write-Log "[DRY RUN] Würde Plan '$planTitle' erstellen" "DRYRUN"
-            Write-Log "[DRY RUN] Buckets: $($planData.Buckets.Count)" "DRYRUN"
-            Write-Log "[DRY RUN] Tasks: $($planData.Tasks.Count)" "DRYRUN"
+            Write-PlannerLog "[DRY RUN] Würde Plan '$planTitle' erstellen" "DRYRUN"
+            Write-PlannerLog "[DRY RUN] Buckets: $($planData.Buckets.Count)" "DRYRUN"
+            Write-PlannerLog "[DRY RUN] Tasks: $($planData.Tasks.Count)" "DRYRUN"
             return $null
         }
 
@@ -141,7 +141,7 @@ BeforeAll {
 
 Describe "Import-PlannerData Script Tests" {
     
-    Context "Write-Log Function Tests" {
+    Context "Write-PlannerLog Function Tests" {
         BeforeEach {
             # Create a temporary test directory for logs
             $script:testImportPath = Join-Path $TestDrive "import-test"
@@ -150,7 +150,7 @@ Describe "Import-PlannerData Script Tests" {
         }
 
         It "Should write INFO level log entry" {
-            Write-Log -Message "Test import message" -Level "INFO"
+            Write-PlannerLog -Message "Test import message" -Level "INFO"
             
             $logFile = Join-Path $script:testImportPath "import.log"
             Test-Path $logFile | Should -Be $true
@@ -160,7 +160,7 @@ Describe "Import-PlannerData Script Tests" {
         }
 
         It "Should write ERROR level log entry" {
-            Write-Log -Message "Import error occurred" -Level "ERROR"
+            Write-PlannerLog -Message "Import error occurred" -Level "ERROR"
             
             $logFile = Join-Path $script:testImportPath "import.log"
             $logContent = Get-Content $logFile -Raw
@@ -168,7 +168,7 @@ Describe "Import-PlannerData Script Tests" {
         }
 
         It "Should write DRYRUN level log entry" {
-            Write-Log -Message "Dry run message" -Level "DRYRUN"
+            Write-PlannerLog -Message "Dry run message" -Level "DRYRUN"
             
             $logFile = Join-Path $script:testImportPath "import.log"
             $logContent = Get-Content $logFile -Raw
@@ -176,7 +176,7 @@ Describe "Import-PlannerData Script Tests" {
         }
 
         It "Should include timestamp in log entry" {
-            Write-Log -Message "Timestamped import message"
+            Write-PlannerLog -Message "Timestamped import message"
             
             $logFile = Join-Path $script:testImportPath "import.log"
             $logContent = Get-Content $logFile -Raw
@@ -190,8 +190,8 @@ Describe "Import-PlannerData Script Tests" {
                 Remove-Item $logFile -Force
             }
             
-            Write-Log -Message "First import message"
-            Write-Log -Message "Second import message"
+            Write-PlannerLog -Message "First import message"
+            Write-PlannerLog -Message "Second import message"
             
             $logContent = Get-Content $logFile
             $logContent.Count | Should -BeGreaterThan 1
@@ -828,7 +828,7 @@ Describe "Import-PlannerData Script Tests" {
             Remove-Item $script:testImportPath -Recurse -Force
             $global:ImportPath = $script:testImportPath
             
-            { Write-Log -Message "Test" } | Should -Not -Throw
+            { Write-PlannerLog -Message "Test" } | Should -Not -Throw
         }
     }
 

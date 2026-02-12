@@ -5,7 +5,7 @@
 .DESCRIPTION
     This test file uses Pester framework to test the Export-PlannerData script.
     Tests include:
-    - Function unit tests (Write-Log, Export-ReadableSummary)
+    - Function unit tests (Write-PlannerLog, Export-ReadableSummary)
     - Mock-based tests for Graph API interactions
     - Edge case and error handling tests
 
@@ -19,7 +19,7 @@ BeforeAll {
     # Define test helper functions that simulate the actual script behavior
     # These are simplified versions for unit testing without external dependencies
     
-    function Write-Log {
+    function Write-PlannerLog {
         param([string]$Message, [string]$Level = "INFO")
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         $logEntry = "[$timestamp] [$Level] $Message"
@@ -129,7 +129,7 @@ BeforeAll {
 
 Describe "Export-PlannerData Script Tests" {
     
-    Context "Write-Log Function Tests" {
+    Context "Write-PlannerLog Function Tests" {
         BeforeEach {
             # Create a temporary test directory for logs
             $script:testExportPath = Join-Path $TestDrive "export-test"
@@ -138,7 +138,7 @@ Describe "Export-PlannerData Script Tests" {
         }
 
         It "Should write INFO level log entry" {
-            Write-Log -Message "Test message" -Level "INFO"
+            Write-PlannerLog -Message "Test message" -Level "INFO"
             
             $logFile = Join-Path $script:testExportPath "export.log"
             Test-Path $logFile | Should -Be $true
@@ -148,7 +148,7 @@ Describe "Export-PlannerData Script Tests" {
         }
 
         It "Should write ERROR level log entry" {
-            Write-Log -Message "Error occurred" -Level "ERROR"
+            Write-PlannerLog -Message "Error occurred" -Level "ERROR"
             
             $logFile = Join-Path $script:testExportPath "export.log"
             $logContent = Get-Content $logFile -Raw
@@ -156,7 +156,7 @@ Describe "Export-PlannerData Script Tests" {
         }
 
         It "Should write WARN level log entry" {
-            Write-Log -Message "Warning message" -Level "WARN"
+            Write-PlannerLog -Message "Warning message" -Level "WARN"
             
             $logFile = Join-Path $script:testExportPath "export.log"
             $logContent = Get-Content $logFile -Raw
@@ -164,7 +164,7 @@ Describe "Export-PlannerData Script Tests" {
         }
 
         It "Should include timestamp in log entry" {
-            Write-Log -Message "Timestamped message"
+            Write-PlannerLog -Message "Timestamped message"
             
             $logFile = Join-Path $script:testExportPath "export.log"
             $logContent = Get-Content $logFile -Raw
@@ -178,8 +178,8 @@ Describe "Export-PlannerData Script Tests" {
                 Remove-Item $logFile -Force
             }
             
-            Write-Log -Message "First message"
-            Write-Log -Message "Second message"
+            Write-PlannerLog -Message "First message"
+            Write-PlannerLog -Message "Second message"
             
             $logContent = Get-Content $logFile
             $logContent.Count | Should -BeGreaterThan 1
@@ -537,7 +537,7 @@ Describe "Export-PlannerData Script Tests" {
             Remove-Item $script:testExportPath -Recurse -Force
             $global:ExportPath = $script:testExportPath
             
-            { Write-Log -Message "Test" } | Should -Not -Throw
+            { Write-PlannerLog -Message "Test" } | Should -Not -Throw
         }
     }
 

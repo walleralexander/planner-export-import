@@ -50,7 +50,7 @@ param(
 
 #region Funktionen
 
-function Write-Log {
+function Write-PlannerLog {
     param([string]$Message, [string]$Level = "INFO")
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "[$timestamp] [$Level] $Message"
@@ -98,14 +98,14 @@ function Invoke-GraphWithRetry {
                 if ($_.Exception.Response.Headers -and $_.Exception.Response.Headers["Retry-After"]) {
                     $retryAfter = [int]$_.Exception.Response.Headers["Retry-After"]
                 }
-                Write-Log "Rate Limited. Warte $retryAfter Sekunden... (Versuch $attempt/$MaxRetries)" "WARN"
+                Write-PlannerLog "Rate Limited. Warte $retryAfter Sekunden... (Versuch $attempt/$MaxRetries)" "WARN"
                 Start-Sleep -Seconds $retryAfter
             }
             elseif ($attempt -ge $MaxRetries) {
                 throw $_
             }
             else {
-                Write-Log "Fehler bei Graph-Request (Versuch $attempt/$MaxRetries): $_" "WARN"
+                Write-PlannerLog "Fehler bei Graph-Request (Versuch $attempt/$MaxRetries): $_" "WARN"
                 Start-Sleep -Seconds (2 * $attempt)
             }
         }
@@ -113,7 +113,7 @@ function Invoke-GraphWithRetry {
 }
 
 function Connect-ToGraph {
-    Write-Log "Verbinde mit Microsoft Graph..."
+    Write-PlannerLog "Verbinde mit Microsoft Graph..."
     try {
         $context = Get-MgContext
         if ($null -eq $context) {
@@ -123,7 +123,7 @@ function Connect-ToGraph {
             }
             catch {
                 # Fallback auf Device Code Flow wenn Browser-Auth fehlschlägt
-                Write-Log "Browser-Authentifizierung fehlgeschlagen, verwende Device Code Flow..." "WARN"
+                Write-PlannerLog "Browser-Authentifizierung fehlgeschlagen, verwende Device Code Flow..." "WARN"
                 Connect-MgGraph -Scopes "Group.ReadWrite.All", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All" -UseDeviceCode -NoWelcome
             }
         }
@@ -131,11 +131,11 @@ function Connect-ToGraph {
         if ($null -eq $context -or [string]::IsNullOrEmpty($context.Account)) {
             throw "Keine gültige Verbindung hergestellt"
         }
-        Write-Log "Verbunden als: $($context.Account)" "OK"
+        Write-PlannerLog "Verbunden als: $($context.Account)" "OK"
         return $true
     }
     catch {
-        Write-Log "Fehler bei der Verbindung: $_" "ERROR"
+        Write-PlannerLog "Fehler bei der Verbindung: $_" "ERROR"
         return $false
     }
 }
@@ -161,7 +161,7 @@ function Resolve-UserId {
                 }
             }
             catch {
-                Write-Log "  Warnung: Benutzer konnte nicht per UPN gefunden werden: $upn" "WARN"
+                Write-PlannerLog "  Warnung: Benutzer konnte nicht per UPN gefunden werden: $upn" "WARN"
             }
         }
 
@@ -173,7 +173,7 @@ function Resolve-UserId {
                 }
             }
             catch {
-                Write-Log "  Warnung: Benutzer konnte nicht per Mail gefunden werden: $mail" "WARN"
+                Write-PlannerLog "  Warnung: Benutzer konnte nicht per Mail gefunden werden: $mail" "WARN"
             }
         }
     }
@@ -186,7 +186,7 @@ function Resolve-UserId {
         }
     }
     catch {
-        Write-Log "  Warnung: Benutzer konnte nicht per ID gefunden werden: $OldUserId" "WARN"
+        Write-PlannerLog "  Warnung: Benutzer konnte nicht per ID gefunden werden: $OldUserId" "WARN"
     }
 
     return $null
@@ -198,7 +198,7 @@ function Import-PlanFromJson {
         [string]$TargetGroupId
     )
 
-    Write-Log "Lade Export-Datei: $JsonFilePath"
+    Write-PlannerLog "Lade Export-Datei: $JsonFilePath"
     $planData = Get-Content $JsonFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
 
     $planTitle = $planData.Plan.title
@@ -208,16 +208,16 @@ function Import-PlanFromJson {
     $groupId = if ($TargetGroupId) { $TargetGroupId } else { $originalGroupId }
 
     if (-not $groupId) {
-        Write-Log "Keine Zielgruppe angegeben und keine Original-Gruppe gefunden!" "ERROR"
+        Write-PlannerLog "Keine Zielgruppe angegeben und keine Original-Gruppe gefunden!" "ERROR"
         return $null
     }
 
-    Write-Log "Erstelle Plan '$planTitle' in Gruppe $groupId..."
+    Write-PlannerLog "Erstelle Plan '$planTitle' in Gruppe $groupId..."
 
     if ($DryRun) {
-        Write-Log "[DRY RUN] Würde Plan '$planTitle' erstellen" "DRYRUN"
-        Write-Log "[DRY RUN] Buckets: $($planData.Buckets.Count)" "DRYRUN"
-        Write-Log "[DRY RUN] Tasks: $($planData.Tasks.Count)" "DRYRUN"
+        Write-PlannerLog "[DRY RUN] Würde Plan '$planTitle' erstellen" "DRYRUN"
+        Write-PlannerLog "[DRY RUN] Buckets: $($planData.Buckets.Count)" "DRYRUN"
+        Write-PlannerLog "[DRY RUN] Tasks: $($planData.Tasks.Count)" "DRYRUN"
         return
     }
 
@@ -226,7 +226,7 @@ function Import-PlanFromJson {
         owner = $groupId
         title = $planTitle
     }
-    Write-Log "  Plan erstellt: $($newPlan.id)" "OK"
+    Write-PlannerLog "  Plan erstellt: $($newPlan.id)" "OK"
 
     # 2. Kategorien/Labels setzen
     if ($planData.Categories) {
@@ -250,10 +250,10 @@ function Import-PlanFromJson {
                 OutputType  = "PSObject"
             }
             Invoke-MgGraphRequest @params
-            Write-Log "  Kategorien gesetzt" "OK"
+            Write-PlannerLog "  Kategorien gesetzt" "OK"
         }
         catch {
-            Write-Log "  Fehler beim Setzen der Kategorien: $_" "WARN"
+            Write-PlannerLog "  Fehler beim Setzen der Kategorien: $_" "WARN"
         }
     }
 
@@ -266,10 +266,10 @@ function Import-PlanFromJson {
                 planId  = $newPlan.id
             }
             $bucketMapping[$bucket.id] = $newBucket.id
-            Write-Log "  Bucket erstellt: $($bucket.name)" "OK"
+            Write-PlannerLog "  Bucket erstellt: $($bucket.name)" "OK"
         }
         catch {
-            Write-Log "  Fehler beim Erstellen von Bucket '$($bucket.name)': $_" "ERROR"
+            Write-PlannerLog "  Fehler beim Erstellen von Bucket '$($bucket.name)': $_" "ERROR"
         }
     }
 
@@ -292,7 +292,7 @@ function Import-PlanFromJson {
 
         # Abgeschlossene Tasks überspringen wenn gewünscht
         if ($SkipCompletedTasks -and $task.percentComplete -eq 100) {
-            Write-Log "  Task übersprungen (abgeschlossen): $($task.title)"
+            Write-PlannerLog "  Task übersprungen (abgeschlossen): $($task.title)"
             continue
         }
 
@@ -346,7 +346,7 @@ function Import-PlanFromJson {
                 }
                 else {
                     $userName = if ($userMap[$_.Name]) { $userMap[$_.Name].DisplayName } else { $_.Name }
-                    Write-Log "    Benutzer konnte nicht zugewiesen werden: $userName" "WARN"
+                    Write-PlannerLog "    Benutzer konnte nicht zugewiesen werden: $userName" "WARN"
                 }
             }
             if ($assignments.Count -gt 0) {
@@ -357,7 +357,7 @@ function Import-PlanFromJson {
         try {
             $newTask = Invoke-GraphWithRetry -Method POST -Uri "https://graph.microsoft.com/v1.0/planner/tasks" -Body $taskBody
             $taskMapping[$task.id] = $newTask.id
-            Write-Log "  Task erstellt: $($task.title)" "OK"
+            Write-PlannerLog "  Task erstellt: $($task.title)" "OK"
 
             # 5. Task-Details setzen (Beschreibung, Checkliste, Referenzen)
             $detail = $planData.TaskDetails | Where-Object { $_.taskId -eq $task.id }
@@ -423,16 +423,16 @@ function Import-PlanFromJson {
                             OutputType  = "PSObject"
                         }
                         Invoke-MgGraphRequest @patchParams
-                        Write-Log "    Details gesetzt für: $($task.title)" "OK"
+                        Write-PlannerLog "    Details gesetzt für: $($task.title)" "OK"
                     }
                     catch {
-                        Write-Log "    Fehler beim Setzen der Task-Details: $_" "WARN"
+                        Write-PlannerLog "    Fehler beim Setzen der Task-Details: $_" "WARN"
                     }
                 }
             }
         }
         catch {
-            Write-Log "  Fehler beim Erstellen von Task '$($task.title)': $_" "ERROR"
+            Write-PlannerLog "  Fehler beim Erstellen von Task '$($task.title)': $_" "ERROR"
         }
     }
 
@@ -475,7 +475,7 @@ if ($DryRun) {
 
 # Prüfe Import-Verzeichnis
 if (-not (Test-Path $ImportPath)) {
-    Write-Log "Import-Verzeichnis nicht gefunden: $ImportPath" "ERROR"
+    Write-PlannerLog "Import-Verzeichnis nicht gefunden: $ImportPath" "ERROR"
     exit 1
 }
 
@@ -483,9 +483,9 @@ if (-not (Test-Path $ImportPath)) {
 $indexPath = Join-Path $ImportPath "_ExportIndex.json"
 if (Test-Path $indexPath) {
     $indexData = Get-Content $indexPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    Write-Log "Export-Index geladen. Export vom: $($indexData.ExportDate)"
-    Write-Log "Exportiert von: $($indexData.ExportedBy)"
-    Write-Log "Pläne im Export: $($indexData.TotalPlans)"
+    Write-PlannerLog "Export-Index geladen. Export vom: $($indexData.ExportDate)"
+    Write-PlannerLog "Exportiert von: $($indexData.ExportedBy)"
+    Write-PlannerLog "Pläne im Export: $($indexData.TotalPlans)"
 }
 
 # JSON-Dateien finden
@@ -493,7 +493,7 @@ $jsonFiles = Get-ChildItem -Path $ImportPath -Filter "*.json" |
     Where-Object { $_.Name -ne "_ExportIndex.json" -and $_.Name -notmatch "ImportMapping" }
 
 if ($jsonFiles.Count -eq 0) {
-    Write-Log "Keine Export-Dateien gefunden in: $ImportPath" "ERROR"
+    Write-PlannerLog "Keine Export-Dateien gefunden in: $ImportPath" "ERROR"
     exit 1
 }
 
@@ -508,7 +508,7 @@ Write-Host ""
 if (-not $DryRun) {
     $confirm = Read-Host "Möchten Sie alle $($jsonFiles.Count) Pläne importieren? (j/n)"
     if ($confirm -ne 'j' -and $confirm -ne 'J') {
-        Write-Log "Import abgebrochen durch Benutzer." "WARN"
+        Write-PlannerLog "Import abgebrochen durch Benutzer." "WARN"
         exit 0
     }
 }
@@ -518,7 +518,7 @@ Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
 
 if (-not $DryRun) {
     if (-not (Connect-ToGraph)) {
-        Write-Log "Abbruch: Keine Verbindung zu Microsoft Graph möglich." "ERROR"
+        Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph möglich." "ERROR"
         exit 1
     }
 }
@@ -527,7 +527,7 @@ if (-not $DryRun) {
 $importResults = @()
 foreach ($jsonFile in $jsonFiles) {
     Write-Host ""
-    Write-Log "=== Importiere: $($jsonFile.Name) ===" "OK"
+    Write-PlannerLog "=== Importiere: $($jsonFile.Name) ===" "OK"
     
     $result = Import-PlanFromJson -JsonFilePath $jsonFile.FullName -TargetGroupId $TargetGroupId
     if ($result) {
@@ -554,7 +554,7 @@ else {
 }
 
 Write-Host ""
-Write-Log "Import abgeschlossen."
+Write-PlannerLog "Import abgeschlossen."
 
 Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
 
