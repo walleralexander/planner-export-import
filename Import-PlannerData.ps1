@@ -61,7 +61,12 @@ function Write-PlannerLog {
         "DRYRUN" { "Magenta" }
         default  { "White" }
     })
-    $logEntry | Out-File -FilePath "$ImportPath\import.log" -Append -Encoding UTF8
+    try {
+        $logEntry | Out-File -FilePath "$ImportPath\import.log" -Append -Encoding utf8BOM -ErrorAction Stop
+    }
+    catch {
+        Write-Host "[ERROR] Konnte nicht in Log-Datei schreiben: $_" -ForegroundColor Red
+    }
 }
 
 function Invoke-GraphWithRetry {
@@ -448,7 +453,12 @@ function Import-PlanFromJson {
         TaskMap      = $taskMapping
     }
     $planFileName = ($planTitle -replace '[\\/:*?"<>|]', '_')
-    $mappingData | ConvertTo-Json -Depth 10 | Out-File -FilePath "$ImportPath\${planFileName}_ImportMapping.json" -Encoding UTF8
+    try {
+        $mappingData | ConvertTo-Json -Depth 10 | Out-File -FilePath "$ImportPath\${planFileName}_ImportMapping.json" -Encoding utf8BOM -ErrorAction Stop
+    }
+    catch {
+        Write-PlannerLog "Fehler beim Schreiben der Mapping-Datei: $_" "ERROR"
+    }
 
     return @{
         NewPlanId    = $newPlan.id
