@@ -31,8 +31,8 @@
     Run all tests with code coverage analysis
 
 .EXAMPLE
-    .\Run-Tests.ps1 -TestName "*Write-Log*"
-    Run only tests matching "Write-Log"
+    .\Run-Tests.ps1 -TestName "*Write-PlannerLog*"
+    Run only tests matching "Write-PlannerLog"
 
 .NOTES
     Author: Alexander Waller
