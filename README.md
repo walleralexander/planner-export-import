@@ -4,10 +4,14 @@
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Microsoft Graph](https://img.shields.io/badge/Microsoft%20Graph-API-orange)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
+![Tests](https://img.shields.io/badge/Tests-59%2F59%20passing-brightgreen)
+![Code Quality](https://img.shields.io/badge/Code%20Quality-8.2%2F10-yellowgreen)
 
 ---
 
 > ⚠️ **WICHTIG:** Bitte lesen Sie die [WARNING.md](WARNING.md) für wichtige Hinweise zu Haftungsausschluss und Testumgebung!
+
+> 📋 **CODE REVIEW:** Siehe [CODE_REVIEW_SUMMARY.md](CODE_REVIEW_SUMMARY.md) für Code-Qualitätsanalyse und Verbesserungsvorschläge
 
 ---
 
