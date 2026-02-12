@@ -1,0 +1,50 @@
+# Exported Planner Data (may contain sensitive organizational data)
+PlannerExport_*/
+planner-data/
+*.json.backup
+
+# Logs
+*.log
+export.log
+import.log
+
+# Temporary files
+*.tmp
+*.temp
+readme_temp.html
+
+# Generated PDFs (can be regenerated from markdown)
+README.pdf
+
+# Temporary conversion scripts (can be regenerated)
+convert-to-pdf.ps1
+
+# Claude Code local settings (user-specific)
+.claude/settings.local.json
+.claude/memory/
+
+# PowerShell specific
+*.ps1xml
+*.psc1
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# User mapping files (may contain sensitive user IDs)
+*user-mapping*.json
+*user-mapping*.ps1
