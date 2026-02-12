@@ -5,9 +5,6 @@
 ![Microsoft Graph](https://img.shields.io/badge/Microsoft%20Graph-API-orange)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 
-(c) Alexander Waller
-Mit freundlicher Unterstützung von Claude Code!
-
 ---
 
 > ⚠️ **WICHTIG:** Bitte lesen Sie die [WARNING.md](WARNING.md) für wichtige Hinweise zu Haftungsausschluss und Testumgebung!
