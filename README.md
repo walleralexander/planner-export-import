@@ -4,10 +4,14 @@
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Microsoft Graph](https://img.shields.io/badge/Microsoft%20Graph-API-orange)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
+![Tests](https://img.shields.io/badge/Tests-59%2F59%20passing-brightgreen)
+![Code Quality](https://img.shields.io/badge/Code%20Quality-8.2%2F10-yellowgreen)
 
 ---
 
 > ⚠️ **WICHTIG:** Bitte lesen Sie die [WARNING.md](WARNING.md) für wichtige Hinweise zu Haftungsausschluss und Testumgebung!
+
+> 📋 **CODE REVIEW:** Siehe [CODE_REVIEW_SUMMARY.md](CODE_REVIEW_SUMMARY.md) für Code-Qualitätsanalyse und Verbesserungsvorschläge
 
 ---
 
@@ -203,6 +207,33 @@ PlannerExport_20260209_143000/
 - **Aufgabenverläufe** (wer hat wann was geändert) werden nicht exportiert
 - **Rate Limits**: Microsoft Graph hat Begrenzungen von ~2000 Requests/Minute.
   Das Script beinhaltet automatisches Throttling und Retry-Logik.
+
+---
+
+## Tests
+
+This project includes a comprehensive test suite with 59 unit tests covering both Export and Import functionality.
+
+### Running Tests
+
+```powershell
+# Quick test run
+Invoke-Pester -Path ./tests
+
+# Or use the test runner with detailed output
+pwsh ./tests/Run-Tests.ps1 -Detailed
+```
+
+### Test Coverage
+
+- **Export-PlannerData.ps1**: 21 tests covering logging, data export, file handling, and error scenarios
+- **Import-PlannerData.ps1**: 38 tests covering import logic, user mapping, dry-run mode, and data restoration
+- **Integration Tests**: Manual test scenarios documented for real-world validation
+
+For detailed information, see:
+- [tests/README.md](tests/README.md) - Test documentation and setup
+- [tests/USAGE.md](tests/USAGE.md) - Practical examples and CI/CD integration
+- [tests/Integration-Tests.ps1](tests/Integration-Tests.ps1) - Manual testing scenarios
 
 ---
 
