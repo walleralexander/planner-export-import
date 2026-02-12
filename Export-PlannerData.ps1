@@ -43,7 +43,12 @@ function Write-PlannerLog {
         "OK"    { "Green" }
         default { "White" }
     })
-    $logEntry | Out-File -FilePath "$ExportPath\export.log" -Append -Encoding UTF8
+    try {
+        $logEntry | Out-File -FilePath "$ExportPath\export.log" -Append -Encoding utf8BOM -ErrorAction Stop
+    }
+    catch {
+        Write-Host "[ERROR] Konnte nicht in Log-Datei schreiben: $_" -ForegroundColor Red
+    }
 }
 
 function Connect-ToGraph {
@@ -281,7 +286,13 @@ function Export-PlanDetails {
     $planFileName = ($Plan.title -replace '[\\/:*?"<>|]', '_')
     $planFilePath = Join-Path $PlanExportPath "$planFileName.json"
 
-    $planData | ConvertTo-Json -Depth 20 | Out-File -FilePath $planFilePath -Encoding UTF8
+    try {
+        $planData | ConvertTo-Json -Depth 20 | Out-File -FilePath $planFilePath -Encoding utf8BOM -ErrorAction Stop
+    }
+    catch {
+        Write-PlannerLog "Fehler beim Schreiben der JSON-Datei: $planFilePath - $_" "ERROR"
+        throw
+    }
     Write-PlannerLog "  Plan exportiert nach: $planFilePath" "OK"
 
     # Zusätzlich eine lesbare Zusammenfassung erstellen
@@ -449,8 +460,13 @@ function Export-ReadableSummary {
     [void]$sb.AppendLine("  Abgeschlossen: $(($PlanData.Tasks | Where-Object { $_.percentComplete -eq 100 }).Count)")
     [void]$sb.AppendLine("=" * 80)
 
-    $sb.ToString() | Out-File -FilePath $OutputPath -Encoding UTF8
-    Write-PlannerLog "  Zusammenfassung erstellt: $OutputPath" "OK"
+    try {
+        $sb.ToString() | Out-File -FilePath $OutputPath -Encoding utf8BOM -ErrorAction Stop
+        Write-PlannerLog "  Zusammenfassung erstellt: $OutputPath" "OK"
+    }
+    catch {
+        Write-PlannerLog "Fehler beim Schreiben der Zusammenfassung: $OutputPath - $_" "ERROR"
+    }
 }
 
 #endregion
@@ -529,7 +545,13 @@ $indexData = @{
     Plans         = $exportSummary
     ScriptVersion = "1.0.0"
 }
-$indexData | ConvertTo-Json -Depth 10 | Out-File -FilePath "$ExportPath\_ExportIndex.json" -Encoding UTF8
+try {
+    $indexData | ConvertTo-Json -Depth 10 | Out-File -FilePath "$ExportPath\_ExportIndex.json" -Encoding utf8BOM -ErrorAction Stop
+}
+catch {
+    Write-PlannerLog "Fehler beim Schreiben der ExportIndex-Datei: $_" "ERROR"
+    throw
+}
 
 # Zusammenfassung
 Write-Host ""
