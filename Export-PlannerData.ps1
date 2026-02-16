@@ -1,23 +1,67 @@
 ﻿<#
 .SYNOPSIS
-    Exportiert alle Microsoft Planner-Daten (PlÃ¤ne, Buckets, Tasks, Details) via Microsoft Graph API.
+    Exportiert Microsoft Planner-Daten (Pläne, Buckets, Tasks, Details) aus M365-Gruppen via Microsoft Graph API.
 
 .DESCRIPTION
-    Dieses Script liest alle Planner-PlÃ¤ne aus, die dem angemeldeten Benutzer bzw. den
-    angegebenen Microsoft 365 Gruppen zugeordnet sind, und exportiert sÃ¤mtliche Daten
-    (Buckets, Tasks inkl. Checklisten, AnhÃ¤nge, Beschreibungen, Zuweisungen etc.)
-    in JSON-Dateien, die fÃ¼r einen spÃ¤teren Re-Import verwendet werden kÃ¶nnen.
+    Dieses Script liest Planner-Pläne aus Microsoft 365 und exportiert sämtliche Daten
+    (Buckets, Tasks inkl. Checklisten, Anhänge, Beschreibungen, Zuweisungen etc.)
+    in JSON-Dateien, die für einen späteren Re-Import verwendet werden können.
+
+    Zwei Export-Modi verfügbar:
+    1. User-basiert: Alle Pläne des aktuellen Benutzers (-UseCurrentUser)
+    2. Gruppen-basiert: Pläne aus spezifischen M365-Gruppen (-GroupNames/-GroupIds/-Interactive)
+
+.PARAMETER ExportPath
+    Zielpfad für den Export (Standard: C:\planner-data\PlannerExport_YYYYMMDD_HHMMSS)
+
+.PARAMETER GroupNames
+    Namen der M365-Gruppen/SharePoint-Seiten, aus denen Pläne exportiert werden sollen.
+    Beispiel: -GroupNames "Projektteam Alpha", "Marketing"
+
+.PARAMETER GroupIds
+    Direkte Angabe von M365-Gruppen-IDs (alternative zu GroupNames).
+    Beispiel: -GroupIds "abc-123-def", "xyz-789-uvw"
+
+.PARAMETER Interactive
+    Zeigt eine interaktive Auswahl aller verfügbaren M365-Gruppen.
+
+.PARAMETER IncludeCompletedTasks
+    Exportiert auch abgeschlossene Tasks (Standard: nur aktive Tasks).
+
+.PARAMETER UseCurrentUser
+    Exportiert alle Pläne des aktuellen Benutzers aus allen seinen M365-Gruppen.
+    Dies ist eine Alternative zu -GroupIds, -GroupNames oder -Interactive.
+
+.EXAMPLE
+    .\Export-PlannerData.ps1 -UseCurrentUser
+    Exportiert alle Pläne des angemeldeten Benutzers aus allen seinen Gruppen
+
+.EXAMPLE
+    .\Export-PlannerData.ps1 -UseCurrentUser -IncludeCompletedTasks
+    Exportiert alle Pläne des Users inkl. abgeschlossener Tasks
+
+.EXAMPLE
+    .\Export-PlannerData.ps1 -GroupNames "Projektteam Alpha"
+    Exportiert alle Pläne der Gruppe "Projektteam Alpha"
+
+.EXAMPLE
+    .\Export-PlannerData.ps1 -Interactive
+    Zeigt interaktive Gruppenauswahl
+
+.EXAMPLE
+    .\Export-PlannerData.ps1 -GroupIds "abc-123-def" -IncludeCompletedTasks
+    Exportiert Pläne der angegebenen Gruppe inkl. abgeschlossener Tasks
 
 .NOTES
     Voraussetzungen:
-    - PowerShell 5.1 oder hÃ¶her (empfohlen: PowerShell 7+)
+    - PowerShell 5.1 oder höher (empfohlen: PowerShell 7+)
     - Microsoft.Graph PowerShell Module
       Install-Module Microsoft.Graph -Scope CurrentUser
     - Berechtigungen: Group.Read.All, Tasks.Read, Tasks.ReadWrite, User.Read
 
 .AUTHOR
     Alexander Waller
-    Datum: 2026-02-09
+    Datum: 2026-02-16
 #>
 
 param(
@@ -28,7 +72,16 @@ param(
     [string[]]$GroupIds,
 
     [Parameter(Mandatory = $false)]
-    [switch]$IncludeCompletedTasks
+    [string[]]$GroupNames,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$IncludeCompletedTasks,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$Interactive,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$UseCurrentUser
 )
 
 #region Funktionen
@@ -80,20 +133,143 @@ function Connect-ToGraph {
     }
 }
 
+function Get-AllM365Groups {
+    Write-PlannerLog "Lade alle verfügbaren M365-Gruppen..."
+    $groups = @()
+
+    try {
+        $uri = "https://graph.microsoft.com/v1.0/groups?`$filter=groupTypes/any(g:g eq 'Unified')&`$select=id,displayName,mail&`$orderby=displayName"
+
+        do {
+            $response = Invoke-MgGraphRequest -Method GET -Uri $uri -OutputType PSObject
+            if ($response.value) {
+                $groups += $response.value
+            }
+            $uri = $response.'@odata.nextLink'
+        } while ($uri)
+
+        Write-PlannerLog "$($groups.Count) M365-Gruppen gefunden"
+        return $groups
+    }
+    catch {
+        Write-PlannerLog "Fehler beim Laden der M365-Gruppen: $_" "ERROR"
+        return @()
+    }
+}
+
+function Get-GroupsByNames {
+    param([string[]]$GroupNames)
+
+    if ($null -eq $GroupNames -or $GroupNames.Count -eq 0) {
+        Write-PlannerLog "Keine Gruppennamen angegeben" "ERROR"
+        return @()
+    }
+
+    Write-PlannerLog "Suche Gruppen nach Namen: $($GroupNames -join ', ')"
+    $foundGroups = @()
+
+    foreach ($name in $GroupNames) {
+        if ([string]::IsNullOrWhiteSpace($name)) {
+            Write-PlannerLog "  Überspringe leeren Gruppennamen" "WARN"
+            continue
+        }
+
+        try {
+            # Suche nach exaktem Namen oder ähnlichem Namen
+            # Hinweis: Sonderzeichen in Gruppennamen könnten zu Problemen führen
+            $uri = "https://graph.microsoft.com/v1.0/groups?`$filter=groupTypes/any(g:g eq 'Unified') and (displayName eq '$name' or startswith(displayName,'$name'))&`$select=id,displayName,mail"
+
+            $response = Invoke-MgGraphRequest -Method GET -Uri $uri -OutputType PSObject
+
+            if ($null -eq $response) {
+                Write-PlannerLog "  Keine Antwort vom Server für Gruppe: $name" "WARN"
+            }
+            elseif ($response.value -and $response.value.Count -gt 0) {
+                $matchCount = $response.value.Count
+                Write-PlannerLog "  $matchCount Gruppe(n) gefunden für: $name"
+                foreach ($group in $response.value) {
+                    # Duplikate vermeiden
+                    if ($foundGroups.id -notcontains $group.id) {
+                        $foundGroups += $group
+                        Write-PlannerLog "    -> $($group.displayName) ($($group.id))" "OK"
+                    }
+                }
+            }
+            else {
+                Write-PlannerLog "  Keine Gruppe gefunden mit Namen: $name" "WARN"
+            }
+        }
+        catch {
+            Write-PlannerLog "  Fehler bei der Suche nach Gruppe '$name': $_" "ERROR"
+        }
+    }
+
+    Write-PlannerLog "Insgesamt $($foundGroups.Count) eindeutige Gruppe(n) gefunden"
+    return $foundGroups
+}
+
+function Show-GroupSelectionMenu {
+    param([array]$Groups)
+
+    Write-Host ""
+    Write-Host "Verfügbare M365-Gruppen:" -ForegroundColor Yellow
+    Write-Host ""
+
+    for ($i = 0; $i -lt $Groups.Count; $i++) {
+        Write-Host "  [$($i+1)] $($Groups[$i].displayName)" -ForegroundColor White
+        if ($Groups[$i].mail) {
+            Write-Host "      $($Groups[$i].mail)" -ForegroundColor Gray
+        }
+    }
+
+    Write-Host ""
+    Write-Host "  [A] Alle Gruppen" -ForegroundColor Cyan
+    Write-Host "  [0] Abbrechen" -ForegroundColor Red
+    Write-Host ""
+
+    $selection = Read-Host "Bitte wählen Sie eine oder mehrere Gruppen (z.B. 1,3,5 oder A)"
+
+    if ($selection -eq "0") {
+        return @()
+    }
+    elseif ($selection -eq "A" -or $selection -eq "a") {
+        return $Groups
+    }
+    else {
+        $selectedGroups = @()
+        $indices = $selection -split ',' | ForEach-Object { $_.Trim() }
+
+        foreach ($index in $indices) {
+            if ($index -match '^\d+$') {
+                $idx = [int]$index - 1
+                if ($idx -ge 0 -and $idx -lt $Groups.Count) {
+                    $selectedGroups += $Groups[$idx]
+                }
+            }
+        }
+
+        return $selectedGroups
+    }
+}
+
 function Get-AllUserPlans {
-    Write-PlannerLog "Lade alle PlÃ¤ne des Benutzers..."
+    Write-PlannerLog "Lade alle Pläne des Benutzers..."
     $plans = @()
 
     try {
-        # Methode 1: Ãœber die Gruppen des Benutzers
+        # Methode 1: Über die Gruppen des Benutzers
         $myGroups = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/me/memberOf/microsoft.graph.group?`$filter=groupTypes/any(g:g eq 'Unified')&`$select=id,displayName" -OutputType PSObject
 
-        if ($myGroups.value) {
+        if ($null -eq $myGroups) {
+            Write-PlannerLog "Keine Antwort beim Abrufen der Benutzergruppen" "WARN"
+        }
+        elseif ($myGroups.value -and $myGroups.value.Count -gt 0) {
+            Write-PlannerLog "$($myGroups.value.Count) M365-Gruppen des Benutzers gefunden"
             foreach ($group in $myGroups.value) {
-                Write-PlannerLog "PrÃ¼fe Gruppe: $($group.displayName) ($($group.id))"
+                Write-PlannerLog "Prüfe Gruppe: $($group.displayName) ($($group.id))"
                 try {
                     $groupPlans = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/groups/$($group.id)/planner/plans" -OutputType PSObject
-                    if ($groupPlans.value) {
+                    if ($groupPlans.value -and $groupPlans.value.Count -gt 0) {
                         foreach ($plan in $groupPlans.value) {
                             $plan | Add-Member -NotePropertyName "groupDisplayName" -NotePropertyValue $group.displayName -Force
                             $plan | Add-Member -NotePropertyName "groupId" -NotePropertyValue $group.id -Force
@@ -103,32 +279,36 @@ function Get-AllUserPlans {
                     }
                 }
                 catch {
-                    Write-PlannerLog "  Keine PlÃ¤ne in Gruppe $($group.displayName) oder kein Zugriff" "WARN"
+                    Write-PlannerLog "  Keine Pläne in Gruppe $($group.displayName) oder kein Zugriff: $_" "WARN"
                 }
             }
         }
+        else {
+            Write-PlannerLog "Benutzer ist kein Mitglied von M365-Gruppen" "WARN"
+        }
 
-        # Methode 2: Direkt Ã¼ber /me/planner/plans (falls unterstÃ¼tzt)
+        # Methode 2: Direkt über /me/planner/plans (falls unterstützt)
         try {
             $myPlans = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/me/planner/plans" -OutputType PSObject
-            if ($myPlans.value) {
+            if ($myPlans.value -and $myPlans.value.Count -gt 0) {
                 foreach ($plan in $myPlans.value) {
                     if ($plans.id -notcontains $plan.id) {
                         $plans += $plan
-                        Write-PlannerLog "  ZusÃ¤tzlicher Plan gefunden: $($plan.title)" "OK"
+                        Write-PlannerLog "  Zusätzlicher Plan gefunden: $($plan.title)" "OK"
                     }
                 }
             }
         }
         catch {
-            Write-PlannerLog "Direkter Planzugriff nicht verfÃ¼gbar, nutze Gruppen-Methode" "WARN"
+            Write-PlannerLog "Direkter Planzugriff nicht verfügbar, nutze Gruppen-Methode: $_" "WARN"
         }
     }
     catch {
-        Write-PlannerLog "Fehler beim Laden der PlÃ¤ne: $_" "ERROR"
+        Write-PlannerLog "Fehler beim Laden der Pläne: $_" "ERROR"
+        return @()
     }
 
-    Write-PlannerLog "Insgesamt $($plans.Count) PlÃ¤ne gefunden"
+    Write-PlannerLog "Insgesamt $($plans.Count) Pläne gefunden"
     return $plans
 }
 
@@ -137,7 +317,7 @@ function Get-PlansByGroupIds {
     $plans = @()
 
     foreach ($groupId in $GroupIds) {
-        Write-PlannerLog "Lade PlÃ¤ne fÃ¼r Gruppe: $groupId"
+        Write-PlannerLog "Lade Pläne für Gruppe: $groupId"
         try {
             # Gruppenname laden
             $group = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/groups/$groupId`?`$select=id,displayName" -OutputType PSObject
@@ -153,7 +333,7 @@ function Get-PlansByGroupIds {
             }
         }
         catch {
-            Write-PlannerLog "Fehler beim Laden der PlÃ¤ne fÃ¼r Gruppe $groupId : $_" "ERROR"
+            Write-PlannerLog "Fehler beim Laden der Pläne für Gruppe $groupId : $_" "ERROR"
         }
     }
 
@@ -180,7 +360,7 @@ function Export-PlanDetails {
         $planData.Categories = $planDetails.categoryDescriptions
         $planData["PlanDetails"] = $planDetails
 
-        # ETag speichern fÃ¼r spÃ¤teren Import
+        # ETag speichern für späteren Import
         if ($planDetails.'@odata.etag') {
             $planData["PlanDetailsEtag"] = $planDetails.'@odata.etag'
         }
@@ -215,7 +395,7 @@ function Export-PlanDetails {
         # Optional: Abgeschlossene Tasks filtern
         if (-not $IncludeCompletedTasks) {
             $completedCount = ($allTasks | Where-Object { $_.percentComplete -eq 100 }).Count
-            Write-PlannerLog "  $completedCount abgeschlossene Tasks werden Ã¼bersprungen (verwende -IncludeCompletedTasks um diese einzubeziehen)"
+            Write-PlannerLog "  $completedCount abgeschlossene Tasks werden übersprungen (verwende -IncludeCompletedTasks um diese einzubeziehen)"
             $allTasks = $allTasks | Where-Object { $_.percentComplete -ne 100 }
         }
 
@@ -227,7 +407,7 @@ function Export-PlanDetails {
         $counter = 0
         foreach ($task in $allTasks) {
             $counter++
-            Write-Progress -Activity "Lade Task-Details fÃ¼r '$($Plan.title)'" -Status "Task $counter von $($allTasks.Count)" -PercentComplete (($counter / $allTasks.Count) * 100)
+            Write-Progress -Activity "Lade Task-Details für '$($Plan.title)'" -Status "Task $counter von $($allTasks.Count)" -PercentComplete (($counter / $allTasks.Count) * 100)
 
             try {
                 $detail = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/planner/tasks/$($task.id)/details" -OutputType PSObject
@@ -249,7 +429,7 @@ function Export-PlanDetails {
         Write-PlannerLog "  Fehler beim Laden der Tasks: $_" "ERROR"
     }
 
-    # Benutzerinfo fÃ¼r Zuweisungen auflÃ¶sen
+    # Benutzerinfo für Zuweisungen auflösen
     $userIds = @()
     foreach ($task in $planData.Tasks) {
         if ($task.assignments) {
@@ -486,7 +666,7 @@ if (-not (Test-Path $ExportPath)) {
 }
 Write-PlannerLog "Export-Verzeichnis: $ExportPath"
 
-# Microsoft.Graph Modul prÃ¼fen
+# Microsoft.Graph Modul prüfen
 if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Planner)) {
     Write-PlannerLog "Microsoft.Graph Module werden installiert..." "WARN"
     Install-Module Microsoft.Graph -Scope CurrentUser -Force -AllowClobber
@@ -496,34 +676,133 @@ Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
 
 # Verbinden
 if (-not (Connect-ToGraph)) {
-    Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph mÃ¶glich." "ERROR"
+    Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph möglich." "ERROR"
     exit 1
 }
 
-# PlÃ¤ne laden
+# Pläne laden
 $plans = @()
-if ($GroupIds) {
+$selectedGroups = @()
+
+if ($UseCurrentUser) {
+    # User-basierte Export: Alle Pläne des aktuellen Benutzers
+    Write-PlannerLog "Verwende Pläne des aktuellen Benutzers"
+    $plans = Get-AllUserPlans
+    if ($null -eq $plans) {
+        Write-PlannerLog "Fehler: Keine Rückgabe von Get-AllUserPlans" "ERROR"
+        exit 1
+    }
+}
+elseif ($GroupIds) {
+    # Direkte Angabe von Gruppen-IDs
+    Write-PlannerLog "Verwende angegebene Gruppen-IDs"
     $plans = Get-PlansByGroupIds -GroupIds $GroupIds
+    if ($null -eq $plans) {
+        Write-PlannerLog "Fehler: Keine Rückgabe von Get-PlansByGroupIds" "ERROR"
+        exit 1
+    }
+}
+elseif ($GroupNames) {
+    # Suche nach Gruppennamen
+    Write-PlannerLog "Suche Gruppen nach Namen"
+    $selectedGroups = Get-GroupsByNames -GroupNames $GroupNames
+
+    if ($null -eq $selectedGroups -or $selectedGroups.Count -eq 0) {
+        Write-PlannerLog "Keine Gruppen mit den angegebenen Namen gefunden." "ERROR"
+        exit 1
+    }
+
+    $plans = Get-PlansByGroupIds -GroupIds $selectedGroups.id
+    if ($null -eq $plans) {
+        Write-PlannerLog "Fehler: Keine Rückgabe von Get-PlansByGroupIds" "ERROR"
+        exit 1
+    }
+}
+elseif ($Interactive) {
+    # Interaktive Auswahl
+    Write-PlannerLog "Starte interaktive Gruppenauswahl"
+    $allGroups = Get-AllM365Groups
+
+    if ($null -eq $allGroups -or $allGroups.Count -eq 0) {
+        Write-PlannerLog "Keine M365-Gruppen verfügbar oder gefunden." "ERROR"
+        exit 1
+    }
+
+    $selectedGroups = Show-GroupSelectionMenu -Groups $allGroups
+
+    if ($null -eq $selectedGroups -or $selectedGroups.Count -eq 0) {
+        Write-PlannerLog "Keine Gruppen ausgewählt. Abbruch." "WARN"
+        exit 0
+    }
+
+    $plans = Get-PlansByGroupIds -GroupIds $selectedGroups.id
+    if ($null -eq $plans) {
+        Write-PlannerLog "Fehler: Keine Rückgabe von Get-PlansByGroupIds" "ERROR"
+        exit 1
+    }
 }
 else {
-    $plans = Get-AllUserPlans
+    # Standardverhalten: Interaktive Auswahl anzeigen
+    Write-PlannerLog "Keine Gruppen angegeben. Zeige verfügbare M365-Gruppen..." "WARN"
+    Write-Host ""
+    Write-Host "HINWEIS: Sie haben keine Gruppen angegeben." -ForegroundColor Yellow
+    Write-Host "Verwenden Sie:" -ForegroundColor Yellow
+    Write-Host "  -GroupNames 'Gruppenname'" -ForegroundColor Cyan
+    Write-Host "  -GroupIds 'gruppe-id'" -ForegroundColor Cyan
+    Write-Host "  -Interactive  (für interaktive Auswahl)" -ForegroundColor Cyan
+    Write-Host ""
+
+    $allGroups = Get-AllM365Groups
+
+    if ($null -eq $allGroups -or $allGroups.Count -eq 0) {
+        Write-PlannerLog "Keine M365-Gruppen verfügbar oder gefunden." "ERROR"
+        exit 1
+    }
+
+    Write-Host "Möchten Sie aus den verfügbaren Gruppen auswählen? (J/N)" -ForegroundColor Yellow
+    $choice = Read-Host
+
+    if ($choice -eq "J" -or $choice -eq "j" -or $choice -eq "Y" -or $choice -eq "y") {
+        $selectedGroups = Show-GroupSelectionMenu -Groups $allGroups
+
+        if ($null -eq $selectedGroups -or $selectedGroups.Count -eq 0) {
+            Write-PlannerLog "Keine Gruppen ausgewählt. Abbruch." "WARN"
+            exit 0
+        }
+
+        $plans = Get-PlansByGroupIds -GroupIds $selectedGroups.id
+        if ($null -eq $plans) {
+            Write-PlannerLog "Fehler: Keine Rückgabe von Get-PlansByGroupIds" "ERROR"
+            exit 1
+        }
+    }
+    else {
+        Write-PlannerLog "Abbruch durch Benutzer." "WARN"
+        exit 0
+    }
+}
+
+# Finale Validierung der Pläne
+if ($null -eq $plans) {
+    Write-PlannerLog "Kritischer Fehler: Plans-Variable ist null" "ERROR"
+    exit 1
 }
 
 if ($plans.Count -eq 0) {
-    Write-PlannerLog "Keine PlÃ¤ne gefunden. ÃœberprÃ¼fen Sie die Berechtigungen." "ERROR"
+    Write-PlannerLog "Keine Pläne gefunden. Überprüfen Sie die Berechtigungen oder ob die Gruppen Pläne enthalten." "ERROR"
     exit 1
 }
 
-# Ãœbersicht anzeigen
+# Übersicht anzeigen
 Write-Host ""
-Write-Host "Gefundene PlÃ¤ne:" -ForegroundColor Yellow
+Write-Host "Gefundene Pläne:" -ForegroundColor Yellow
 for ($i = 0; $i -lt $plans.Count; $i++) {
     $groupName = if ($plans[$i].groupDisplayName) { " (Gruppe: $($plans[$i].groupDisplayName))" } else { "" }
     Write-Host "  [$($i+1)] $($plans[$i].title)$groupName"
 }
 Write-Host ""
 
-# Alle PlÃ¤ne exportieren
+# Alle Pläne exportieren
 $exportSummary = @()
 foreach ($plan in $plans) {
     Write-Host ""
@@ -537,7 +816,7 @@ foreach ($plan in $plans) {
     }
 }
 
-# GesamtÃ¼bersicht als Index-Datei
+# Gesamtübersicht als Index-Datei
 $indexData = @{
     ExportDate    = (Get-Date).ToString("o")
     ExportedBy    = (Get-MgContext).Account
@@ -560,16 +839,16 @@ Write-Host "  EXPORT ABGESCHLOSSEN" -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Verzeichnis: $ExportPath" -ForegroundColor White
-Write-Host "  PlÃ¤ne:       $($plans.Count)" -ForegroundColor White
+Write-Host "  Pläne:       $($plans.Count)" -ForegroundColor White
 $totalTasks = ($exportSummary | Measure-Object -Property Tasks -Sum).Sum
 Write-Host "  Tasks:       $totalTasks" -ForegroundColor White
 Write-Host ""
 Write-Host "  Dateien pro Plan:" -ForegroundColor Yellow
-Write-Host "    - <PlanName>.json         (Strukturierte Daten fÃ¼r Import)" -ForegroundColor Gray
-Write-Host "    - <PlanName>_Zusammenfassung.txt  (Lesbare Ãœbersicht)" -ForegroundColor Gray
-Write-Host "    - _ExportIndex.json       (GesamtÃ¼bersicht)" -ForegroundColor Gray
+Write-Host "    - <PlanName>.json         (Strukturierte Daten für Import)" -ForegroundColor Gray
+Write-Host "    - <PlanName>_Zusammenfassung.txt  (Lesbare Übersicht)" -ForegroundColor Gray
+Write-Host "    - _ExportIndex.json       (Gesamtübersicht)" -ForegroundColor Gray
 Write-Host ""
-Write-PlannerLog "Export abgeschlossen. $($plans.Count) PlÃ¤ne mit $totalTasks Tasks exportiert." "OK"
+Write-PlannerLog "Export abgeschlossen. $($plans.Count) Pläne mit $totalTasks Tasks exportiert." "OK"
 
 Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
 

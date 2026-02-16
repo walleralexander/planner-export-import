@@ -4,14 +4,54 @@
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Microsoft Graph](https://img.shields.io/badge/Microsoft%20Graph-API-orange)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-59%2F59%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/Tests-93%2F97%20passing-green)
 ![Code Quality](https://img.shields.io/badge/Code%20Quality-8.2%2F10-yellowgreen)
 
 ---
 
 > ⚠️ **WICHTIG:** Bitte lesen Sie die [WARNING.md](WARNING.md) für wichtige Hinweise zu Haftungsausschluss und Testumgebung!
-
 > 📋 **CODE REVIEW:** Siehe [CODE_REVIEW_SUMMARY.md](CODE_REVIEW_SUMMARY.md) für Code-Qualitätsanalyse und Verbesserungsvorschläge
+
+---
+
+## 🆕 Neu in Version 1.1.0 (Februar 2026)
+
+### Flexible Export-Modi
+
+Das Export-Skript unterstützt jetzt **zwei verschiedene Modi**:
+
+1. **👤 User-basiert** (`-UseCurrentUser`): Exportiert alle Pläne des aktuell angemeldeten Benutzers
+
+   ```powershell
+   .\Export-PlannerData.ps1 -UseCurrentUser
+   ```
+
+2. **🏢 Gruppen-basiert**: Exportiert Pläne aus spezifischen M365-Gruppen/SharePoint-Seiten
+
+   - **Nach Gruppennamen** (`-GroupNames`): Sucht Gruppen nach ihrem Display-Namen
+
+     ```powershell
+     .\Export-PlannerData.ps1 -GroupNames "Projektteam Alpha", "Marketing"
+     ```
+
+   - **Nach Gruppen-IDs** (`-GroupIds`): Direkte Angabe von Gruppen-IDs
+
+     ```powershell
+     .\Export-PlannerData.ps1 -GroupIds "abc123-...", "def456-..."
+     ```
+
+   - **Interaktiv** (`-Interactive`): Zeigt alle verfügbaren Gruppen zur Auswahl an
+
+     ```powershell
+     .\Export-PlannerData.ps1 -Interactive
+     ```
+
+### Weitere Verbesserungen
+
+- ✅ Korrekte Umlaut-Darstellung in allen Ausgaben
+- ✅ Verbesserte Fehlerprüfung und Null-Validierung
+- ✅ Detailliertere Log-Meldungen mit Statusangaben
+- ✅ Bessere Behandlung von fehlenden oder ungültigen Gruppen
 
 ---
 
@@ -24,7 +64,7 @@ Datenverluste zu vermeiden.
 ### Was wird exportiert/importiert?
 
 | Datenpunkt | Export | Import |
-|---|---|---|
+| --- | --- | --- |
 | Pläne | ✅ | ✅ |
 | Buckets (Spalten) | ✅ | ✅ |
 | Tasks (Aufgaben) | ✅ | ✅ |
@@ -47,19 +87,21 @@ Datenverluste zu vermeiden.
 
 ## Voraussetzungen
 
-### 1. PowerShell 7+ (empfohlen)
 ```powershell
 winget install Microsoft.PowerShell
 ```
 
 ### 2. Microsoft Graph PowerShell Module
+
 ```powershell
 Install-Module Microsoft.Graph -Scope CurrentUser -Force
 ```
 
 ### 3. Berechtigungen
+
 Beim ersten Ausführen wird ein Browser-Fenster für die Anmeldung geöffnet.
 Benötigte Berechtigungen (Delegated):
+
 - `Group.Read.All` (Export) / `Group.ReadWrite.All` (Import)
 - `Tasks.Read` (Export) / `Tasks.ReadWrite` (Import)
 - `User.Read`
@@ -71,19 +113,30 @@ Benötigte Berechtigungen (Delegated):
 
 ### Export
 
-#### Alle eigenen Pläne exportieren:
+#### 👤 User-basierte Export (Alle eigenen Pläne)
+
 ```powershell
-.\Export-PlannerData.ps1
+# Alle Pläne des aktuellen Benutzers exportieren
+.\Export-PlannerData.ps1 -UseCurrentUser
+
+# Mit abgeschlossenen Tasks
+.\Export-PlannerData.ps1 -UseCurrentUser -IncludeCompletedTasks
 ```
 
-> Standardmäßig wird nach `C:\planner-data\PlannerExport_YYYYMMDD_HHMMSS` exportiert.
+#### 🏢 Gruppen-basierte Export
 
-#### Export in bestimmtes Verzeichnis:
+**Nach Gruppennamen:**
+
 ```powershell
-.\Export-PlannerData.ps1 -ExportPath "C:\Backup\Planner"
+# Eine Gruppe
+.\Export-PlannerData.ps1 -GroupNames "Projektteam Alpha"
+
+# Mehrere Gruppen
+.\Export-PlannerData.ps1 -GroupNames "Projektteam Alpha", "Marketing Team"
 ```
 
-#### Nur bestimmte Gruppen exportieren:
+**Nach Gruppen-IDs:**
+
 ```powershell
 .\Export-PlannerData.ps1 -GroupIds "abc123-...", "def456-..."
 ```
@@ -91,39 +144,56 @@ Benötigte Berechtigungen (Delegated):
 > **Tipp:** Die Gruppen-ID findet man in der URL wenn man die Gruppe in Outlook/Teams öffnet,
 > oder über das Azure AD Portal unter Gruppen.
 
-#### Abgeschlossene Tasks einbeziehen:
+**Interaktive Auswahl:**
+
 ```powershell
-.\Export-PlannerData.ps1 -IncludeCompletedTasks
+.\Export-PlannerData.ps1 -Interactive
 ```
+
+> Zeigt eine Liste aller verfügbaren M365-Gruppen zur Auswahl an.
+
+#### Export in bestimmtes Verzeichnis
+
+```powershell
+.\Export-PlannerData.ps1 -UseCurrentUser -ExportPath "C:\Backup\Planner"
+```
+
+> Standardmäßig wird nach `C:\planner-data\PlannerExport_YYYYMMDD_HHMMSS` exportiert.
 
 ### Import
 
-#### Alle exportierten Pläne importieren (gleiche Gruppen):
+#### Alle exportierten Pläne importieren (gleiche Gruppen)
+
 ```powershell
 .\Import-PlannerData.ps1 -ImportPath ".\PlannerExport_20260209_143000"
 ```
 
-#### In eine bestimmte Gruppe importieren:
+#### In eine bestimmte Gruppe importieren
+
 ```powershell
 .\Import-PlannerData.ps1 -ImportPath ".\PlannerExport_20260209_143000" -TargetGroupId "neue-gruppe-id"
 ```
 
-#### Probelauf (Dry Run) - zeigt was gemacht würde:
+#### Probelauf (Dry Run) - zeigt was gemacht würde
+
 ```powershell
 .\Import-PlannerData.ps1 -ImportPath ".\PlannerExport_20260209_143000" -DryRun
 ```
 
-#### Ohne Zuweisungen importieren:
+#### Ohne Zuweisungen importieren
+
 ```powershell
 .\Import-PlannerData.ps1 -ImportPath ".\PlannerExport_20260209_143000" -SkipAssignments
 ```
 
-#### Abgeschlossene Tasks beim Import überspringen:
+#### Abgeschlossene Tasks beim Import überspringen
+
 ```powershell
 .\Import-PlannerData.ps1 -ImportPath ".\PlannerExport_20260209_143000" -SkipCompletedTasks
 ```
 
-#### Benutzer-Mapping (wenn User-IDs sich ändern):
+#### Benutzer-Mapping (wenn User-IDs sich ändern)
+
 ```powershell
 $mapping = @{
     "alte-user-id-1" = "neue-user-id-1"
@@ -138,7 +208,7 @@ $mapping = @{
 
 Nach dem Export enthält das Verzeichnis:
 
-```
+```Text
 PlannerExport_20260209_143000/
 ├── _ExportIndex.json                    # Gesamtübersicht aller exportierten Pläne
 ├── export.log                           # Log-Datei des Exports
@@ -158,10 +228,14 @@ PlannerExport_20260209_143000/
 ## Empfohlene Vorgehensweise für den Lizenzwechsel
 
 1. **VOR dem Wechsel:**
+
    ```powershell
-   # Alle Pläne exportieren
-   .\Export-PlannerData.ps1 -ExportPath "C:\Backup\Planner_PreMigration"
-   
+   # Alle Pläne des aktuellen Benutzers exportieren
+   .\Export-PlannerData.ps1 -UseCurrentUser -ExportPath "C:\Backup\Planner_PreMigration"
+
+   # ODER: Spezifische Gruppen exportieren
+   .\Export-PlannerData.ps1 -GroupNames "Projektteam", "Marketing" -ExportPath "C:\Backup\Planner_PreMigration"
+
    # Zusammenfassungen prüfen - stimmt alles?
    Get-ChildItem "C:\Backup\Planner_PreMigration\*Zusammenfassung*"
    ```
@@ -171,6 +245,7 @@ PlannerExport_20260209_143000/
    - Sicherheitshalber ZIP erstellen
 
 3. **NACH dem Wechsel:**
+
    ```powershell
    # Erst einen Probelauf:
    .\Import-PlannerData.ps1 -ImportPath "C:\Backup\Planner_PreMigration" -DryRun
@@ -189,7 +264,7 @@ PlannerExport_20260209_143000/
 ## Fehlerbehebung
 
 | Problem | Lösung |
-|---|---|
+| --- | --- |
 | "Insufficient privileges" | Azure AD Admin muss die App-Berechtigungen freigeben |
 | "429 Too Many Requests" | Script wartet automatisch, ggf. `-ThrottleDelayMs 1000` erhöhen |
 | Zuweisungen fehlen | Benutzer existieren nicht im Tenant → `-SkipAssignments` oder UserMapping |
@@ -231,6 +306,7 @@ pwsh ./tests/Run-Tests.ps1 -Detailed
 - **Integration Tests**: Manual test scenarios documented for real-world validation
 
 For detailed information, see:
+
 - [tests/README.md](tests/README.md) - Test documentation and setup
 - [tests/USAGE.md](tests/USAGE.md) - Practical examples and CI/CD integration
 - [tests/Integration-Tests.ps1](tests/Integration-Tests.ps1) - Manual testing scenarios

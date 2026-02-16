@@ -7,6 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is a PowerShell-based Microsoft Planner export/import tool created by Alexander Waller. It enables complete backup and restoration of Microsoft Planner data via Microsoft Graph API, primarily designed for license migration scenarios.
 
 **Key capabilities:**
+
 - Exports all Planner data (plans, buckets, tasks, checklists, descriptions, assignments, categories, references)
 - Imports data to same or different Microsoft 365 groups
 - Handles user mapping for cross-tenant migrations
@@ -17,17 +18,28 @@ This is a PowerShell-based Microsoft Planner export/import tool created by Alexa
 ### Export Operations
 
 ```powershell
-# Export all plans the current user has access to (default: C:\planner-data\PlannerExport_YYYYMMDD_HHMMSS)
-.\Export-PlannerData.ps1
+# User-based: Export all plans of current user
+.\Export-PlannerData.ps1 -UseCurrentUser
 
-# Export to specific directory
-.\Export-PlannerData.ps1 -ExportPath "C:\Backup\Planner"
+# User-based: Export with completed tasks
+.\Export-PlannerData.ps1 -UseCurrentUser -IncludeCompletedTasks
 
-# Export specific groups only
+# Group-based: Interactive selection of M365 groups/SharePoint sites
+.\Export-PlannerData.ps1 -Interactive
+
+# Group-based: Export from specific groups by name
+.\Export-PlannerData.ps1 -GroupNames "Projektteam Alpha", "Marketing Team"
+
+# Group-based: Export from specific groups by ID
 .\Export-PlannerData.ps1 -GroupIds "abc123-...", "def456-..."
 
+# Export to specific directory
+.\Export-PlannerData.ps1 -GroupNames "Projektteam" -ExportPath "C:\Backup\Planner"
+
 # Include completed tasks in export
-.\Export-PlannerData.ps1 -IncludeCompletedTasks
+.\Export-PlannerData.ps1 -GroupNames "Projektteam" -IncludeCompletedTasks
+
+# Note: Without parameters, the script will prompt for group selection
 ```
 
 ### Import Operations
@@ -72,6 +84,7 @@ Get-Content ".\PlannerExport_YYYYMMDD_HHMMSS\PlanName.json" | ConvertFrom-Json |
 ### Script Structure
 
 Both scripts follow the same organizational pattern:
+
 1. **Parameter block** - Script parameters with validation
 2. **Functions region** (`#region Funktionen`) - All helper functions
 3. **Main program region** (`#region Hauptprogramm`) - Main execution flow
@@ -79,14 +92,19 @@ Both scripts follow the same organizational pattern:
 ### Key Functions
 
 **Export-PlannerData.ps1:**
+
 - `Connect-ToGraph` - Authenticates with Microsoft Graph (scopes: Group.Read.All, Tasks.Read, Tasks.ReadWrite, User.Read, User.ReadBasic.All)
-- `Get-AllUserPlans` - Retrieves plans via two methods: user's groups and direct /me/planner/plans endpoint
+- `Get-AllUserPlans` - Retrieves all plans the current user has access to (via user's groups and /me/planner/plans endpoint)
+- `Get-AllM365Groups` - Retrieves all M365 groups (Unified groups) with paging support
+- `Get-GroupsByNames` - Searches for M365 groups by display name (supports partial matching)
+- `Show-GroupSelectionMenu` - Interactive menu for selecting groups from a list
 - `Get-PlansByGroupIds` - Retrieves plans for specific group IDs
 - `Export-PlanDetails` - Main export logic: loads plan, buckets, tasks, task details, user info; handles paging
 - `Export-ReadableSummary` - Creates human-readable text summary of plan data
-- `Write-Log` - Unified logging to console and file
+- `Write-PlannerLog` - Unified logging to console and file
 
 **Import-PlannerData.ps1:**
+
 - `Connect-ToGraph` - Authenticates with elevated permissions (Group.ReadWrite.All, Tasks.ReadWrite)
 - `Invoke-GraphWithRetry` - Handles API rate limiting (429 errors), retry logic with exponential backoff
 - `Resolve-UserId` - Maps old user IDs to new tenant using UserMapping, UPN lookup, or direct ID validation
@@ -117,7 +135,8 @@ Both scripts follow the same organizational pattern:
 ### Data Model
 
 **Export output structure:**
-```
+
+```Text
 PlannerExport_YYYYMMDD_HHMMSS/
 ├── _ExportIndex.json                 # Metadata: export date, user, plan count
 ├── export.log                        # Timestamped execution log
@@ -133,6 +152,7 @@ PlannerExport_YYYYMMDD_HHMMSS/
 ```
 
 **Import mapping output:**
+
 ```json
 {
   "ImportDate": "ISO8601",
