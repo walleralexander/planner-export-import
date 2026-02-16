@@ -5,7 +5,7 @@
 This is a PowerShell-based Microsoft Planner export/import tool created by Alexander Waller for backing up and restoring Microsoft Planner data via Microsoft Graph API. It's primarily designed for license migration scenarios where organizations need to preserve their Planner data when switching Microsoft 365 licenses or tenants.
 
 **Project Type**: PowerShell scripts (2 main files)
-**Primary Language**: PowerShell 7+ (minimum 5.1)
+**Primary Language**: PowerShell (minimum version 5.1, recommended 7+)
 **API Integration**: Microsoft Graph API v1.0
 **Testing Framework**: Pester 5.x
 **Repository Size**: Small (~50KB of PowerShell code, extensive documentation)
@@ -40,11 +40,13 @@ Invoke-Pester -Configuration $config
 ```
 
 **Test Infrastructure**:
-- **Total Tests**: 97 tests (93 passing, 4 pre-existing failures)
+- **Total Tests**: 97 tests (93 passing, 4 pre-existing failures unrelated to v1.1.0 features)
 - **Export Tests**: 59 tests in `tests/Export-PlannerData.Tests.ps1`
 - **Import Tests**: 38 tests in `tests/Import-PlannerData.Tests.ps1`
 - **Integration Tests**: Manual scenarios in `tests/Integration-Tests.ps1`
 - **Prerequisites**: Install Pester 5.x with `Install-Module -Name Pester -Force -SkipPublisherCheck -MinimumVersion 5.0.0`
+
+**Known Test Issues**: 4 tests have pre-existing failures in the core functionality tests (not in v1.1.0 features). These are being tracked but don't affect the main export/import functionality. New test failures beyond these 4 should be investigated as potential regressions.
 
 **Important**: Tests are unit tests that don't make real API calls. They use mocking to test function logic in isolation. For full integration testing, use a test Microsoft 365 tenant.
 
@@ -151,7 +153,7 @@ $mapping = @{ "alte-user-id-1" = "neue-user-id-1"; "alte-user-id-2" = "neue-user
 
 **Export Output Structure:**
 ```
-PlannerExport_YYYYMMDD_HHMMSS/
+PlannerExport_YYYYMMdd_HHmmss/
 ├── _ExportIndex.json                 # Metadata: export date, user, plan count
 ├── export.log                        # Timestamped execution log
 ├── <PlanName>.json                   # Full structured data
@@ -182,7 +184,7 @@ PlannerExport_YYYYMMDD_HHMMSS/
 ### File Handling
 - **Always use UTF-8 encoding** for all file operations
 - Plan titles with special characters are sanitized for filenames: `[\\/:*?"<>|]` replaced with `_`
-- Export path defaults to `C:\planner-data\PlannerExport_YYYYMMDD_HHMMSS`
+- Export path defaults to `C:\planner-data\PlannerExport_YYYYMMdd_HHmmss`
 
 ### Logging
 - All log output is in **German** (log messages should maintain this convention)
