@@ -1,22 +1,22 @@
 ﻿<#
 .SYNOPSIS
-    Importiert zuvor exportierte Microsoft Planner-Daten zurÃ¼ck in neue PlÃ¤ne.
+    Importiert zuvor exportierte Microsoft Planner-Daten zurück in neue Pläne.
 
 .DESCRIPTION
-    Liest die JSON-Exportdateien von Export-PlannerData.ps1 und erstellt neue PlÃ¤ne,
+    Liest die JSON-Exportdateien von Export-PlannerData.ps1 und erstellt neue Pläne,
     Buckets, Tasks (inkl. Checklisten, Beschreibungen, Zuweisungen und Labels)
     in den angegebenen Microsoft 365 Gruppen.
 
 .NOTES
     Voraussetzungen:
-    - PowerShell 5.1 oder hÃ¶her (empfohlen: PowerShell 7+)
+    - PowerShell 5.1 oder höher (empfohlen: PowerShell 7+)
     - Microsoft.Graph PowerShell Module
     - Berechtigungen: Group.ReadWrite.All, Tasks.ReadWrite
 
     WICHTIG:
     - Planner hat API-Rate-Limits. Das Script wartet automatisch zwischen Requests.
-    - AnhÃ¤nge/Referenzen (URLs) werden als Links wiederhergestellt.
-    - DateianhÃ¤nge aus SharePoint mÃ¼ssen manuell neu verknÃ¼pft werden.
+    - Anhänge/Referenzen (URLs) werden als Links wiederhergestellt.
+    - Dateianhänge aus SharePoint müssen manuell neu verknüpft werden.
     - Benutzer-Zuweisungen funktionieren nur, wenn die User-IDs in der neuen
       Umgebung identisch sind (gleicher Tenant) oder ein Mapping bereitgestellt wird.
 
@@ -31,7 +31,15 @@ param(
     [string]$ImportPath,
 
     [Parameter(Mandatory = $false)]
-    [ValidatePattern('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')]
+    [ValidateScript({
+        if ([string]::IsNullOrEmpty($_)) {
+            return $true  # Allow empty/null
+        }
+        if ($_ -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') {
+            throw "TargetGroupId muss eine gültige GUID sein.`n`nBeispiel: 12345678-1234-1234-1234-123456789abc`n`nSie haben eingegeben: $_`n`nUm die Gruppen-ID zu finden, verwenden Sie:`n  Get-MgGroup -Filter `"displayName eq 'Ihr Gruppenname'`" | Select-Object Id, DisplayName"
+        }
+        return $true
+    })]
     [string]$TargetGroupId,
 
     [Parameter(Mandatory = $false)]
@@ -82,7 +90,7 @@ function Write-PlannerLog {
         default  { "White" }
     })
     try {
-        $logEntry | Out-File -FilePath "$ImportPath\import.log" -Append -Encoding utf8BOM -ErrorAction Stop
+        $logEntry | Out-File -FilePath "$ImportPath\import.log" -Append -Encoding utf8 -ErrorAction Stop
     }
     catch {
         Write-Host "[ERROR] Konnte nicht in Log-Datei schreiben: $_" -ForegroundColor Red
@@ -357,7 +365,7 @@ function Write-ErrorSummary {
 
     $reportPath = Join-Path $OutputPath "import_errors.json"
     try {
-        $errorReport | ConvertTo-Json -Depth 10 | Out-File -FilePath $reportPath -Encoding utf8BOM -ErrorAction Stop
+        $errorReport | ConvertTo-Json -Depth 10 | Out-File -FilePath $reportPath -Encoding utf8 -ErrorAction Stop
         Write-Host "Detaillierter Fehlerbericht gespeichert: $reportPath" -ForegroundColor Cyan
     }
     catch {
@@ -518,14 +526,14 @@ function Connect-ToGraph {
                 Connect-MgGraph -Scopes "Group.ReadWrite.All", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All" -NoWelcome -ErrorAction Stop
             }
             catch {
-                # Fallback auf Device Code Flow wenn Browser-Auth fehlschlÃ¤gt
+                # Fallback auf Device Code Flow wenn Browser-Auth fehlschlägt
                 Write-PlannerLog "Browser-Authentifizierung fehlgeschlagen, verwende Device Code Flow..." "WARN"
                 Connect-MgGraph -Scopes "Group.ReadWrite.All", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All" -UseDeviceCode -NoWelcome
             }
         }
         $context = Get-MgContext
         if ($null -eq $context -or [string]::IsNullOrEmpty($context.Account)) {
-            throw "Keine gÃ¼ltige Verbindung hergestellt"
+            throw "Keine gültige Verbindung hergestellt"
         }
         Write-PlannerLog "Verbunden als: $($context.Account)" "OK"
         return $true
@@ -675,7 +683,7 @@ function Import-PlanFromJson {
     Write-PlannerLog "Erstelle Plan '$planTitle' in Gruppe $groupId..."
 
     if ($DryRun) {
-        Write-PlannerLog "[DRY RUN] WÃ¼rde Plan '$planTitle' erstellen" "DRYRUN"
+        Write-PlannerLog "[DRY RUN] Würde Plan '$planTitle' erstellen" "DRYRUN"
         Write-PlannerLog "[DRY RUN] Buckets: $($planData.Buckets.Count)" "DRYRUN"
         Write-PlannerLog "[DRY RUN] Tasks: $($planData.Tasks.Count)" "DRYRUN"
         return
@@ -761,11 +769,11 @@ function Import-PlanFromJson {
 
     foreach ($task in $planData.Tasks) {
         $taskCounter++
-        Write-Progress -Activity "Importiere Tasks fÃ¼r '$planTitle'" -Status "Task $taskCounter von ${totalTasks}: $($task.title)" -PercentComplete (($taskCounter / $totalTasks) * 100)
+        Write-Progress -Activity "Importiere Tasks für '$planTitle'" -Status "Task $taskCounter von ${totalTasks}: $($task.title)" -PercentComplete (($taskCounter / $totalTasks) * 100)
 
-        # Abgeschlossene Tasks Ã¼berspringen wenn gewÃ¼nscht
+        # Abgeschlossene Tasks überspringen wenn gewünscht
         if ($SkipCompletedTasks -and $task.percentComplete -eq 100) {
-            Write-PlannerLog "  Task Ã¼bersprungen (abgeschlossen): $($task.title)"
+            Write-PlannerLog "  Task übersprungen (abgeschlossen): $($task.title)"
             continue
         }
 
@@ -900,7 +908,7 @@ function Import-PlanFromJson {
                             OutputType  = "PSObject"
                         }
                         Invoke-MgGraphRequest @patchParams
-                        Write-PlannerLog "    Details gesetzt fÃ¼r: $($task.title)" "OK"
+                        Write-PlannerLog "    Details gesetzt für: $($task.title)" "OK"
                         $script:errorTracker.TaskDetails.Succeeded++
                     }
                     catch {
@@ -929,7 +937,7 @@ function Import-PlanFromJson {
     }
     $planFileName = ($planTitle -replace '[\\/:*?"<>|]', '_')
     try {
-        $mappingData | ConvertTo-Json -Depth 10 | Out-File -FilePath "$ImportPath\${planFileName}_ImportMapping.json" -Encoding utf8BOM -ErrorAction Stop
+        $mappingData | ConvertTo-Json -Depth 10 | Out-File -FilePath "$ImportPath\${planFileName}_ImportMapping.json" -Encoding utf8 -ErrorAction Stop
     }
     catch {
         Write-PlannerLog "Fehler beim Schreiben der Mapping-Datei: $_" "ERROR"
@@ -954,7 +962,7 @@ Write-Host "============================================================" -Foreg
 Write-Host ""
 
 if ($DryRun) {
-    Write-Host "  *** DRY RUN MODUS - Es werden keine Ã„nderungen vorgenommen ***" -ForegroundColor Magenta
+    Write-Host "  *** DRY RUN MODUS - Es werden keine Änderungen vorgenommen ***" -ForegroundColor Magenta
     Write-Host ""
 }
 
@@ -974,7 +982,7 @@ if (Test-Path $indexPath) {
     $indexData = Get-Content $indexPath -Raw -Encoding UTF8 | ConvertFrom-Json
     Write-PlannerLog "Export-Index geladen. Export vom: $($indexData.ExportDate)"
     Write-PlannerLog "Exportiert von: $($indexData.ExportedBy)"
-    Write-PlannerLog "PlÃ¤ne im Export: $($indexData.TotalPlans)"
+    Write-PlannerLog "Pläne im Export: $($indexData.TotalPlans)"
 }
 
 # JSON-Dateien finden
@@ -993,9 +1001,9 @@ for ($i = 0; $i -lt $jsonFiles.Count; $i++) {
 }
 Write-Host ""
 
-# BestÃ¤tigung
+# Bestätigung
 if (-not $DryRun) {
-    $confirm = Read-Host "MÃ¶chten Sie alle $($jsonFiles.Count) PlÃ¤ne importieren? (j/n)"
+    $confirm = Read-Host "Möchten Sie alle $($jsonFiles.Count) Pläne importieren? (j/n)"
     if ($confirm -ne 'j' -and $confirm -ne 'J') {
         Write-PlannerLog "Import abgebrochen durch Benutzer." "WARN"
         exit 0
@@ -1007,12 +1015,12 @@ Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
 
 if (-not $DryRun) {
     if (-not (Connect-ToGraph)) {
-        Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph mÃ¶glich." "ERROR"
+        Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph möglich." "ERROR"
         exit 1
     }
 }
 
-# Import durchfÃ¼hren
+# Import durchführen
 $importResults = @()
 foreach ($jsonFile in $jsonFiles) {
     Write-Host ""
@@ -1032,7 +1040,7 @@ Write-Host "============================================================" -Foreg
 Write-Host ""
 
 if ($DryRun) {
-    Write-Host "  *** Dies war ein DRY RUN - keine Ã„nderungen wurden vorgenommen ***" -ForegroundColor Magenta
+    Write-Host "  *** Dies war ein DRY RUN - keine Änderungen wurden vorgenommen ***" -ForegroundColor Magenta
     Write-Host ""
 }
 else {
@@ -1040,7 +1048,7 @@ else {
     $totalTasksImported = ($importResults | Measure-Object -Property TasksCreated -Sum).Sum
     $totalBucketsImported = ($importResults | Measure-Object -Property BucketsCreated -Sum).Sum
     Write-Host "  Erfolgreich importiert:" -ForegroundColor White
-    Write-Host "    PlÃ¤ne:    $($importResults.Count)" -ForegroundColor Green
+    Write-Host "    Pläne:    $($importResults.Count)" -ForegroundColor Green
     Write-Host "    Buckets:  $totalBucketsImported" -ForegroundColor Green
     Write-Host "    Tasks:    $totalTasksImported" -ForegroundColor Green
     Write-Host ""

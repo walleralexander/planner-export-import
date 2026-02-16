@@ -100,7 +100,7 @@ function Write-PlannerLog {
         default { "White" }
     })
     try {
-        $logEntry | Out-File -FilePath "$ExportPath\export.log" -Append -Encoding utf8BOM -ErrorAction Stop
+        $logEntry | Out-File -FilePath "$ExportPath\export.log" -Append -Encoding utf8 -ErrorAction Stop
     }
     catch {
         Write-Host "[ERROR] Konnte nicht in Log-Datei schreiben: $_" -ForegroundColor Red
@@ -235,7 +235,7 @@ function Test-SafePath {
 function Connect-ToGraph {
     Write-PlannerLog "Verbinde mit Microsoft Graph..."
     try {
-        # PrÃ¼fe ob bereits verbunden
+        # Prüfe ob bereits verbunden
         $context = Get-MgContext
         if ($null -eq $context) {
             try {
@@ -243,14 +243,14 @@ function Connect-ToGraph {
                 Connect-MgGraph -Scopes "Group.Read.All", "Tasks.Read", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All" -NoWelcome -ErrorAction Stop
             }
             catch {
-                # Fallback auf Device Code Flow wenn Browser-Auth fehlschlÃ¤gt
+                # Fallback auf Device Code Flow wenn Browser-Auth fehlschlägt
                 Write-PlannerLog "Browser-Authentifizierung fehlgeschlagen, verwende Device Code Flow..." "WARN"
                 Connect-MgGraph -Scopes "Group.Read.All", "Tasks.Read", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All" -UseDeviceCode -NoWelcome
             }
         }
         $context = Get-MgContext
         if ($null -eq $context -or [string]::IsNullOrEmpty($context.Account)) {
-            throw "Keine gÃ¼ltige Verbindung hergestellt"
+            throw "Keine gültige Verbindung hergestellt"
         }
         Write-PlannerLog "Verbunden als: $($context.Account)" "OK"
         return $true
@@ -584,7 +584,7 @@ function Export-PlanDetails {
             }
         }
         catch {
-            Write-PlannerLog "    Konnte Benutzer $userId nicht auflÃ¶sen" "WARN"
+            Write-PlannerLog "    Konnte Benutzer $userId nicht auflösen" "WARN"
             $userMap[$userId] = @{ Id = $userId; DisplayName = "Unbekannt"; UserPrincipalName = ""; Mail = "" }
         }
     }
@@ -606,7 +606,7 @@ function Export-PlanDetails {
     $planFilePath = Join-Path $PlanExportPath "$planFileName.json"
 
     try {
-        $planData | ConvertTo-Json -Depth 20 | Out-File -FilePath $planFilePath -Encoding utf8BOM -ErrorAction Stop
+        $planData | ConvertTo-Json -Depth 20 | Out-File -FilePath $planFilePath -Encoding utf8 -ErrorAction Stop
     }
     catch {
         Write-PlannerLog "Fehler beim Schreiben der JSON-Datei: $planFilePath - $_" "ERROR"
@@ -614,7 +614,7 @@ function Export-PlanDetails {
     }
     Write-PlannerLog "  Plan exportiert nach: $planFilePath" "OK"
 
-    # ZusÃ¤tzlich eine lesbare Zusammenfassung erstellen
+    # Zusätzlich eine lesbare Zusammenfassung erstellen
     Export-ReadableSummary -PlanData $planData -OutputPath (Join-Path $PlanExportPath "$planFileName`_Zusammenfassung.txt")
 
     return $planData
@@ -668,19 +668,19 @@ function Export-ReadableSummary {
                 [void]$sb.AppendLine("")
                 [void]$sb.AppendLine("  $status $($task.title)")
 
-                # PrioritÃ¤t
+                # Priorität
                 $priority = switch ($task.priority) {
                     0 { "Dringend" }
                     1 { "Wichtig" }
                     2 { "Mittel" }
                     default { "Niedrig" }
                 }
-                [void]$sb.AppendLine("    PrioritÃ¤t: $priority")
+                [void]$sb.AppendLine("    Priorität: $priority")
 
-                # FÃ¤lligkeitsdatum
+                # Fälligkeitsdatum
                 if ($task.dueDateTime) {
                     $dueDate = [DateTime]::Parse($task.dueDateTime).ToString("dd.MM.yyyy")
-                    [void]$sb.AppendLine("    FÃ¤llig am: $dueDate")
+                    [void]$sb.AppendLine("    Fällig am: $dueDate")
                 }
 
                 # Startdatum
@@ -743,7 +743,7 @@ function Export-ReadableSummary {
                     if ($detail.references) {
                         $refs = $detail.references.PSObject.Properties
                         if ($refs.Count -gt 0) {
-                            [void]$sb.AppendLine("    AnhÃ¤nge/Links:")
+                            [void]$sb.AppendLine("    Anhänge/Links:")
                             $refs | ForEach-Object {
                                 $ref = $_.Value
                                 $url = $_.Name -replace '%2F', '/' -replace '%3A', ':'
@@ -780,7 +780,7 @@ function Export-ReadableSummary {
     [void]$sb.AppendLine("=" * 80)
 
     try {
-        $sb.ToString() | Out-File -FilePath $OutputPath -Encoding utf8BOM -ErrorAction Stop
+        $sb.ToString() | Out-File -FilePath $OutputPath -Encoding utf8 -ErrorAction Stop
         Write-PlannerLog "  Zusammenfassung erstellt: $OutputPath" "OK"
     }
     catch {
@@ -996,7 +996,7 @@ $indexData = @{
     ScriptVersion = "1.0.0"
 }
 try {
-    $indexData | ConvertTo-Json -Depth 10 | Out-File -FilePath "$ExportPath\_ExportIndex.json" -Encoding utf8BOM -ErrorAction Stop
+    $indexData | ConvertTo-Json -Depth 10 | Out-File -FilePath "$ExportPath\_ExportIndex.json" -Encoding utf8 -ErrorAction Stop
 }
 catch {
     Write-PlannerLog "Fehler beim Schreiben der ExportIndex-Datei: $_" "ERROR"
