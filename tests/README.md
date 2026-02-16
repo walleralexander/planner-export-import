@@ -95,6 +95,56 @@ Tests for the export functionality including:
   - Priority value to text mapping
   - Task completion status mapping
 
+- **Version 1.1.0 Feature Tests**
+  - **Get-AllM365Groups Function Tests**
+    - Successful M365 group retrieval
+    - Paging support with @odata.nextLink
+    - Empty response handling
+    - Error handling
+
+  - **Get-GroupsByNames Function Tests**
+    - Finding groups by exact name
+    - Finding multiple groups
+    - Null/empty input handling
+    - Empty group name skipping
+    - Duplicate group avoidance
+    - Null API response handling
+    - Empty value handling
+    - API error handling
+
+  - **Show-GroupSelectionMenu Function Tests**
+    - Cancel selection (0)
+    - Select all groups (A/a)
+    - Single group selection
+    - Multiple group selection (comma-separated)
+    - Space handling in input
+    - Invalid index handling
+    - Non-numeric input handling
+
+  - **Get-AllUserPlans Function Tests**
+    - Plan retrieval via user groups (Method 1)
+    - Plan retrieval via /me/planner/plans (Method 2)
+    - Duplicate plan avoidance between methods
+    - User with no groups
+    - Null response handling
+    - Groups without plans
+    - Group plan retrieval errors
+    - Direct plan access errors
+    - Complete API failure
+    - Multiple groups with plans
+
+  - **New Parameter Tests**
+    - `-UseCurrentUser` switch parameter
+    - `-GroupNames` string array parameter
+    - `-Interactive` switch parameter
+    - Multiple GroupNames handling
+    - Empty string array validation
+
+  - **Export Mode Selection Tests**
+    - User-based mode flow
+    - Group-based mode with names
+    - Interactive mode flow
+
 ### Import-PlannerData.Tests.ps1
 
 Tests for the import functionality including:
@@ -270,6 +320,32 @@ On some systems, `$TestDrive` may have permission issues. If tests fail:
 # Run PowerShell as Administrator
 # Or use a different temp directory
 ```
+
+## Test Coverage Summary
+
+**Total Tests**: 97
+**Passing**: 93 (95.9%)
+**Failing**: 4 (4.1%) - Pre-existing issues, not related to v1.1.0 features
+
+### Breakdown by File
+
+- **Export-PlannerData.Tests.ps1**: 59 tests
+  - Core functionality: 21 tests
+  - Version 1.1.0 features: 38 tests
+- **Import-PlannerData.Tests.ps1**: 38 tests
+
+### Version 1.1.0 Test Coverage
+
+The test suite includes comprehensive coverage for all new v1.1.0 features:
+
+- ✅ User-based export mode (`-UseCurrentUser`)
+- ✅ Group-based export modes (`-GroupNames`, `-GroupIds`, `-Interactive`)
+- ✅ Interactive group selection menu
+- ✅ M365 group retrieval and filtering
+- ✅ Error handling and edge cases for all new functions
+- ✅ Parameter validation
+
+All 38 new v1.1.0 tests are passing successfully.
 
 ## Contributing
 

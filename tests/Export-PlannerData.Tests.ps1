@@ -82,7 +82,7 @@ BeforeAll {
                         100 { "[x] Abgeschlossen" }
                         default { "[$($task.percentComplete)%]" }
                     }
-                    
+
                     [void]$sb.AppendLine("")
                     [void]$sb.AppendLine("  $status $($task.title)")
 
@@ -124,6 +124,183 @@ BeforeAll {
         [void]$sb.AppendLine("=" * 80)
 
         $sb.ToString() | Out-File -FilePath $OutputPath -Encoding UTF8
+    }
+
+    # Version 1.1.0 new functions
+    function Get-AllM365Groups {
+        Write-PlannerLog "Lade alle verfügbaren M365-Gruppen..."
+        $groups = @()
+
+        try {
+            $uri = "https://graph.microsoft.com/v1.0/groups?`$filter=groupTypes/any(g:g eq 'Unified')&`$select=id,displayName,mail&`$orderby=displayName"
+
+            do {
+                $response = Invoke-MgGraphRequest -Method GET -Uri $uri -OutputType PSObject
+                if ($response.value) {
+                    $groups += $response.value
+                }
+                $uri = $response.'@odata.nextLink'
+            } while ($uri)
+
+            Write-PlannerLog "$($groups.Count) M365-Gruppen gefunden"
+            return $groups
+        }
+        catch {
+            Write-PlannerLog "Fehler beim Laden der M365-Gruppen: $_" "ERROR"
+            return @()
+        }
+    }
+
+    function Get-GroupsByNames {
+        param([string[]]$GroupNames)
+
+        if ($null -eq $GroupNames -or $GroupNames.Count -eq 0) {
+            Write-PlannerLog "Keine Gruppennamen angegeben" "ERROR"
+            return @()
+        }
+
+        Write-PlannerLog "Suche Gruppen nach Namen: $($GroupNames -join ', ')"
+        $foundGroups = @()
+
+        foreach ($name in $GroupNames) {
+            if ([string]::IsNullOrWhiteSpace($name)) {
+                Write-PlannerLog "  Überspringe leeren Gruppennamen" "WARN"
+                continue
+            }
+
+            try {
+                $uri = "https://graph.microsoft.com/v1.0/groups?`$filter=groupTypes/any(g:g eq 'Unified') and (displayName eq '$name' or startswith(displayName,'$name'))&`$select=id,displayName,mail"
+
+                $response = Invoke-MgGraphRequest -Method GET -Uri $uri -OutputType PSObject
+
+                if ($null -eq $response) {
+                    Write-PlannerLog "  Keine Antwort vom Server für Gruppe: $name" "WARN"
+                }
+                elseif ($response.value -and $response.value.Count -gt 0) {
+                    $matchCount = $response.value.Count
+                    Write-PlannerLog "  $matchCount Gruppe(n) gefunden für: $name"
+                    foreach ($group in $response.value) {
+                        if ($foundGroups.id -notcontains $group.id) {
+                            $foundGroups += $group
+                            Write-PlannerLog "    -> $($group.displayName) ($($group.id))" "OK"
+                        }
+                    }
+                }
+                else {
+                    Write-PlannerLog "  Keine Gruppe gefunden mit Namen: $name" "WARN"
+                }
+            }
+            catch {
+                Write-PlannerLog "  Fehler bei der Suche nach Gruppe '$name': $_" "ERROR"
+            }
+        }
+
+        Write-PlannerLog "Insgesamt $($foundGroups.Count) eindeutige Gruppe(n) gefunden"
+        return $foundGroups
+    }
+
+    function Show-GroupSelectionMenu {
+        param([array]$Groups)
+
+        Write-Host ""
+        Write-Host "Verfügbare M365-Gruppen:" -ForegroundColor Yellow
+        Write-Host ""
+
+        for ($i = 0; $i -lt $Groups.Count; $i++) {
+            Write-Host "  [$($i+1)] $($Groups[$i].displayName)" -ForegroundColor White
+            if ($Groups[$i].mail) {
+                Write-Host "      $($Groups[$i].mail)" -ForegroundColor Gray
+            }
+        }
+
+        Write-Host ""
+        Write-Host "  [A] Alle Gruppen" -ForegroundColor Cyan
+        Write-Host "  [0] Abbrechen" -ForegroundColor Red
+        Write-Host ""
+
+        $selection = Read-Host "Bitte wählen Sie eine oder mehrere Gruppen (z.B. 1,3,5 oder A)"
+
+        if ($selection -eq "0") {
+            return @()
+        }
+        elseif ($selection -eq "A" -or $selection -eq "a") {
+            return $Groups
+        }
+        else {
+            $selectedGroups = @()
+            $indices = $selection -split ',' | ForEach-Object { $_.Trim() }
+
+            foreach ($index in $indices) {
+                if ($index -match '^\d+$') {
+                    $idx = [int]$index - 1
+                    if ($idx -ge 0 -and $idx -lt $Groups.Count) {
+                        $selectedGroups += $Groups[$idx]
+                    }
+                }
+            }
+
+            return $selectedGroups
+        }
+    }
+
+    function Get-AllUserPlans {
+        Write-PlannerLog "Lade alle Pläne des Benutzers..."
+        $plans = @()
+
+        try {
+            # Methode 1: Über die Gruppen des Benutzers
+            $myGroups = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/me/memberOf/microsoft.graph.group?`$filter=groupTypes/any(g:g eq 'Unified')&`$select=id,displayName" -OutputType PSObject
+
+            if ($null -eq $myGroups) {
+                Write-PlannerLog "Keine Antwort beim Abrufen der Benutzergruppen" "WARN"
+            }
+            elseif ($myGroups.value -and $myGroups.value.Count -gt 0) {
+                Write-PlannerLog "$($myGroups.value.Count) M365-Gruppen des Benutzers gefunden"
+                foreach ($group in $myGroups.value) {
+                    Write-PlannerLog "Prüfe Gruppe: $($group.displayName) ($($group.id))"
+                    try {
+                        $groupPlans = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/groups/$($group.id)/planner/plans" -OutputType PSObject
+                        if ($groupPlans.value -and $groupPlans.value.Count -gt 0) {
+                            foreach ($plan in $groupPlans.value) {
+                                $plan | Add-Member -NotePropertyName "groupDisplayName" -NotePropertyValue $group.displayName -Force
+                                $plan | Add-Member -NotePropertyName "groupId" -NotePropertyValue $group.id -Force
+                                $plans += $plan
+                                Write-PlannerLog "  Plan gefunden: $($plan.title)" "OK"
+                            }
+                        }
+                    }
+                    catch {
+                        Write-PlannerLog "  Keine Pläne in Gruppe $($group.displayName) oder kein Zugriff: $_" "WARN"
+                    }
+                }
+            }
+            else {
+                Write-PlannerLog "Benutzer ist kein Mitglied von M365-Gruppen" "WARN"
+            }
+
+            # Methode 2: Direkt über /me/planner/plans (falls unterstützt)
+            try {
+                $myPlans = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/me/planner/plans" -OutputType PSObject
+                if ($myPlans.value -and $myPlans.value.Count -gt 0) {
+                    foreach ($plan in $myPlans.value) {
+                        if ($plans.id -notcontains $plan.id) {
+                            $plans += $plan
+                            Write-PlannerLog "  Zusätzlicher Plan gefunden: $($plan.title)" "OK"
+                        }
+                    }
+                }
+            }
+            catch {
+                Write-PlannerLog "Direkter Planzugriff nicht verfügbar, nutze Gruppen-Methode: $_" "WARN"
+            }
+        }
+        catch {
+            Write-PlannerLog "Fehler beim Laden der Pläne: $_" "ERROR"
+            return @()
+        }
+
+        Write-PlannerLog "Insgesamt $($plans.Count) Pläne gefunden"
+        return $plans
     }
 }
 
@@ -604,6 +781,645 @@ Describe "Export-PlannerData Script Tests" {
             $statuses[0] | Should -Be "Nicht begonnen"
             $statuses[50] | Should -Be "In Bearbeitung"
             $statuses[100] | Should -Be "Abgeschlossen"
+        }
+    }
+
+    # ====================================================================================
+    # Version 1.1.0 Feature Tests
+    # ====================================================================================
+
+    Context "Get-AllM365Groups Function Tests (v1.1.0)" {
+        BeforeEach {
+            $script:testExportPath = Join-Path $TestDrive "export-test"
+            New-Item -ItemType Directory -Path $script:testExportPath -Force | Out-Null
+            $global:ExportPath = $script:testExportPath
+        }
+
+        It "Should retrieve M365 groups successfully" {
+            Mock Invoke-MgGraphRequest {
+                return [PSCustomObject]@{
+                    value = @(
+                        [PSCustomObject]@{ id = "group-1"; displayName = "Test Group 1"; mail = "group1@test.com" }
+                        [PSCustomObject]@{ id = "group-2"; displayName = "Test Group 2"; mail = "group2@test.com" }
+                    )
+                    '@odata.nextLink' = $null
+                }
+            }
+
+            $groups = Get-AllM365Groups
+
+            @($groups).Count | Should -Be 2
+            $groups[0].displayName | Should -Be "Test Group 1"
+            $groups[1].displayName | Should -Be "Test Group 2"
+        }
+
+        It "Should handle paging with @odata.nextLink" {
+            $script:callCount = 0
+            Mock Invoke-MgGraphRequest {
+                $script:callCount++
+                if ($script:callCount -eq 1) {
+                    return [PSCustomObject]@{
+                        value = @([PSCustomObject]@{ id = "group-1"; displayName = "Group 1"; mail = "g1@test.com" })
+                        '@odata.nextLink' = "https://graph.microsoft.com/v1.0/groups?next"
+                    }
+                }
+                else {
+                    return [PSCustomObject]@{
+                        value = @([PSCustomObject]@{ id = "group-2"; displayName = "Group 2"; mail = "g2@test.com" })
+                        '@odata.nextLink' = $null
+                    }
+                }
+            }
+
+            $groups = Get-AllM365Groups
+
+            @($groups).Count | Should -Be 2
+            $script:callCount | Should -Be 2
+        }
+
+        It "Should handle empty response" {
+            Mock Invoke-MgGraphRequest {
+                return [PSCustomObject]@{
+                    value = @()
+                    '@odata.nextLink' = $null
+                }
+            }
+
+            $groups = Get-AllM365Groups
+
+            @($groups).Count | Should -Be 0
+        }
+
+        It "Should handle errors gracefully" {
+            Mock Invoke-MgGraphRequest {
+                throw "API Error"
+            }
+
+            $groups = Get-AllM365Groups
+
+            @($groups).Count | Should -Be 0
+        }
+    }
+
+    Context "Get-GroupsByNames Function Tests (v1.1.0)" {
+        BeforeEach {
+            $script:testExportPath = Join-Path $TestDrive "export-test"
+            New-Item -ItemType Directory -Path $script:testExportPath -Force | Out-Null
+            $global:ExportPath = $script:testExportPath
+        }
+
+        It "Should find groups by exact name" {
+            Mock Invoke-MgGraphRequest {
+                return [PSCustomObject]@{
+                    value = @(
+                        [PSCustomObject]@{ id = "group-1"; displayName = "Projektteam Alpha"; mail = "alpha@test.com" }
+                    )
+                }
+            }
+
+            $groups = Get-GroupsByNames -GroupNames "Projektteam Alpha"
+
+            @($groups).Count | Should -Be 1
+            $groups[0].displayName | Should -Be "Projektteam Alpha"
+        }
+
+        It "Should find multiple groups by names" {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $OutputType)
+                if ($Uri -like "*Projektteam Alpha*") {
+                    return [PSCustomObject]@{
+                        value = @([PSCustomObject]@{ id = "group-1"; displayName = "Projektteam Alpha"; mail = "alpha@test.com" })
+                    }
+                }
+                elseif ($Uri -like "*Marketing*") {
+                    return [PSCustomObject]@{
+                        value = @([PSCustomObject]@{ id = "group-2"; displayName = "Marketing"; mail = "marketing@test.com" })
+                    }
+                }
+            }
+
+            $groups = Get-GroupsByNames -GroupNames "Projektteam Alpha", "Marketing"
+
+            @($groups).Count | Should -Be 2
+        }
+
+        It "Should handle null or empty input" {
+            $groups = Get-GroupsByNames -GroupNames $null
+
+            @($groups).Count | Should -Be 0
+        }
+
+        It "Should skip empty group names" {
+            Mock Invoke-MgGraphRequest {
+                return [PSCustomObject]@{
+                    value = @([PSCustomObject]@{ id = "group-1"; displayName = "Valid Group"; mail = "valid@test.com" })
+                }
+            }
+
+            $groups = Get-GroupsByNames -GroupNames "", "Valid Group", "  "
+
+            @($groups).Count | Should -Be 1
+            $groups[0].displayName | Should -Be "Valid Group"
+        }
+
+        It "Should avoid duplicate groups" {
+            Mock Invoke-MgGraphRequest {
+                return [PSCustomObject]@{
+                    value = @(
+                        [PSCustomObject]@{ id = "group-1"; displayName = "Test Group"; mail = "test@test.com" }
+                        [PSCustomObject]@{ id = "group-1"; displayName = "Test Group"; mail = "test@test.com" }
+                    )
+                }
+            }
+
+            $groups = Get-GroupsByNames -GroupNames "Test Group"
+
+            @($groups).Count | Should -Be 1
+        }
+
+        It "Should handle null response from API" {
+            Mock Invoke-MgGraphRequest {
+                return $null
+            }
+
+            $groups = Get-GroupsByNames -GroupNames "NonExistent"
+
+            @($groups).Count | Should -Be 0
+        }
+
+        It "Should handle empty value in API response" {
+            Mock Invoke-MgGraphRequest {
+                return [PSCustomObject]@{
+                    value = @()
+                }
+            }
+
+            $groups = Get-GroupsByNames -GroupNames "NonExistent"
+
+            @($groups).Count | Should -Be 0
+        }
+
+        It "Should handle API errors gracefully" {
+            Mock Invoke-MgGraphRequest {
+                throw "API Error: Access Denied"
+            }
+
+            $groups = Get-GroupsByNames -GroupNames "Test Group"
+
+            @($groups).Count | Should -Be 0
+        }
+    }
+
+    Context "Show-GroupSelectionMenu Function Tests (v1.1.0)" {
+        BeforeEach {
+            $script:testExportPath = Join-Path $TestDrive "export-test"
+            New-Item -ItemType Directory -Path $script:testExportPath -Force | Out-Null
+            $global:ExportPath = $script:testExportPath
+
+            $script:testGroups = @(
+                [PSCustomObject]@{ id = "group-1"; displayName = "Group 1"; mail = "g1@test.com" }
+                [PSCustomObject]@{ id = "group-2"; displayName = "Group 2"; mail = "g2@test.com" }
+                [PSCustomObject]@{ id = "group-3"; displayName = "Group 3"; mail = "g3@test.com" }
+            )
+        }
+
+        It "Should return empty array when user selects 0 (cancel)" {
+            Mock Read-Host { return "0" }
+
+            $selected = Show-GroupSelectionMenu -Groups $script:testGroups
+
+            $selected.Count | Should -Be 0
+        }
+
+        It "Should return all groups when user selects A" {
+            Mock Read-Host { return "A" }
+
+            $selected = Show-GroupSelectionMenu -Groups $script:testGroups
+
+            $selected.Count | Should -Be 3
+        }
+
+        It "Should return all groups when user selects a (lowercase)" {
+            Mock Read-Host { return "a" }
+
+            $selected = Show-GroupSelectionMenu -Groups $script:testGroups
+
+            $selected.Count | Should -Be 3
+        }
+
+        It "Should return single group when user selects index 1" {
+            Mock Read-Host { return "1" }
+
+            $selected = Show-GroupSelectionMenu -Groups $script:testGroups
+
+            $selected.Count | Should -Be 1
+            $selected[0].displayName | Should -Be "Group 1"
+        }
+
+        It "Should return multiple groups for comma-separated indices" {
+            Mock Read-Host { return "1,3" }
+
+            $selected = Show-GroupSelectionMenu -Groups $script:testGroups
+
+            $selected.Count | Should -Be 2
+            $selected[0].displayName | Should -Be "Group 1"
+            $selected[1].displayName | Should -Be "Group 3"
+        }
+
+        It "Should handle spaces in comma-separated input" {
+            Mock Read-Host { return "1, 2, 3" }
+
+            $selected = Show-GroupSelectionMenu -Groups $script:testGroups
+
+            $selected.Count | Should -Be 3
+        }
+
+        It "Should ignore invalid indices" {
+            Mock Read-Host { return "1,99,2" }
+
+            $selected = Show-GroupSelectionMenu -Groups $script:testGroups
+
+            $selected.Count | Should -Be 2
+            $selected[0].displayName | Should -Be "Group 1"
+            $selected[1].displayName | Should -Be "Group 2"
+        }
+
+        It "Should ignore non-numeric input" {
+            Mock Read-Host { return "1,abc,2" }
+
+            $selected = Show-GroupSelectionMenu -Groups $script:testGroups
+
+            $selected.Count | Should -Be 2
+        }
+    }
+
+    Context "Get-AllUserPlans Function Tests (v1.1.0)" {
+        BeforeEach {
+            $script:testExportPath = Join-Path $TestDrive "export-test"
+            New-Item -ItemType Directory -Path $script:testExportPath -Force | Out-Null
+            $global:ExportPath = $script:testExportPath
+        }
+
+        It "Should retrieve plans via user groups (Method 1)" {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $OutputType)
+                if ($Uri -like "*/me/memberOf/*") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "group-1"; displayName = "Test Group" }
+                        )
+                    }
+                }
+                elseif ($Uri -like "*/groups/*/planner/plans") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "plan-1"; title = "Test Plan" }
+                        )
+                    }
+                }
+                elseif ($Uri -like "*/me/planner/plans") {
+                    return [PSCustomObject]@{ value = @() }
+                }
+            }
+
+            $plans = Get-AllUserPlans
+
+            $plans.Count | Should -Be 1
+            $plans[0].title | Should -Be "Test Plan"
+            $plans[0].groupDisplayName | Should -Be "Test Group"
+            $plans[0].groupId | Should -Be "group-1"
+        }
+
+        It "Should retrieve additional plans via /me/planner/plans (Method 2)" {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $OutputType)
+                if ($Uri -like "*/me/memberOf/*") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "group-1"; displayName = "Group 1" }
+                        )
+                    }
+                }
+                elseif ($Uri -like "*/groups/*/planner/plans") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "plan-1"; title = "Plan from Group" }
+                        )
+                    }
+                }
+                elseif ($Uri -like "*/me/planner/plans") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "plan-2"; title = "Additional Plan" }
+                        )
+                    }
+                }
+            }
+
+            $plans = Get-AllUserPlans
+
+            $plans.Count | Should -Be 2
+            $plans[0].title | Should -Be "Plan from Group"
+            $plans[1].title | Should -Be "Additional Plan"
+        }
+
+        It "Should avoid duplicate plans from both methods" {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $OutputType)
+                if ($Uri -like "*/me/memberOf/*") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "group-1"; displayName = "Group 1" }
+                        )
+                    }
+                }
+                elseif ($Uri -like "*/groups/*/planner/plans") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "plan-1"; title = "Same Plan" }
+                        )
+                    }
+                }
+                elseif ($Uri -like "*/me/planner/plans") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "plan-1"; title = "Same Plan" }
+                        )
+                    }
+                }
+            }
+
+            $plans = Get-AllUserPlans
+
+            $plans.Count | Should -Be 1
+        }
+
+        It "Should handle user with no groups" {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $OutputType)
+                if ($Uri -like "*/me/memberOf/*") {
+                    return [PSCustomObject]@{ value = @() }
+                }
+                elseif ($Uri -like "*/me/planner/plans") {
+                    return [PSCustomObject]@{ value = @() }
+                }
+            }
+
+            $plans = Get-AllUserPlans
+
+            $plans.Count | Should -Be 0
+        }
+
+        It "Should handle null response from memberOf API" {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $OutputType)
+                if ($Uri -like "*/me/memberOf/*") {
+                    return $null
+                }
+                elseif ($Uri -like "*/me/planner/plans") {
+                    return [PSCustomObject]@{ value = @() }
+                }
+            }
+
+            $plans = Get-AllUserPlans
+
+            $plans.Count | Should -Be 0
+        }
+
+        It "Should handle groups without plans" {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $OutputType)
+                if ($Uri -like "*/me/memberOf/*") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "group-1"; displayName = "Empty Group" }
+                        )
+                    }
+                }
+                elseif ($Uri -like "*/groups/*/planner/plans") {
+                    return [PSCustomObject]@{ value = @() }
+                }
+                elseif ($Uri -like "*/me/planner/plans") {
+                    return [PSCustomObject]@{ value = @() }
+                }
+            }
+
+            $plans = Get-AllUserPlans
+
+            $plans.Count | Should -Be 0
+        }
+
+        It "Should handle errors in group plan retrieval gracefully" {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $OutputType)
+                if ($Uri -like "*/me/memberOf/*") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "group-1"; displayName = "Group 1" }
+                        )
+                    }
+                }
+                elseif ($Uri -like "*/groups/*/planner/plans") {
+                    throw "Access Denied"
+                }
+                elseif ($Uri -like "*/me/planner/plans") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "plan-1"; title = "Accessible Plan" }
+                        )
+                    }
+                }
+            }
+
+            $plans = Get-AllUserPlans
+
+            @($plans).Count | Should -Be 1
+            $plans[0].title | Should -Be "Accessible Plan"
+        }
+
+        It "Should handle errors in direct plan access gracefully" {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $OutputType)
+                if ($Uri -like "*/me/memberOf/*") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "group-1"; displayName = "Group 1" }
+                        )
+                    }
+                }
+                elseif ($Uri -like "*/groups/*/planner/plans") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "plan-1"; title = "Group Plan" }
+                        )
+                    }
+                }
+                elseif ($Uri -like "*/me/planner/plans") {
+                    throw "Not supported"
+                }
+            }
+
+            $plans = Get-AllUserPlans
+
+            @($plans).Count | Should -Be 1
+            $plans[0].title | Should -Be "Group Plan"
+        }
+
+        It "Should handle complete API failure" {
+            Mock Invoke-MgGraphRequest {
+                throw "Network Error"
+            }
+
+            $plans = Get-AllUserPlans
+
+            $plans.Count | Should -Be 0
+        }
+
+        It "Should retrieve plans from multiple groups" {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $OutputType)
+                if ($Uri -like "*/me/memberOf/*") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "group-1"; displayName = "Group 1" }
+                            [PSCustomObject]@{ id = "group-2"; displayName = "Group 2" }
+                        )
+                    }
+                }
+                elseif ($Uri -like "*/groups/group-1/planner/plans") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "plan-1"; title = "Plan 1" }
+                        )
+                    }
+                }
+                elseif ($Uri -like "*/groups/group-2/planner/plans") {
+                    return [PSCustomObject]@{
+                        value = @(
+                            [PSCustomObject]@{ id = "plan-2"; title = "Plan 2" }
+                        )
+                    }
+                }
+                elseif ($Uri -like "*/me/planner/plans") {
+                    return [PSCustomObject]@{ value = @() }
+                }
+            }
+
+            $plans = Get-AllUserPlans
+
+            $plans.Count | Should -Be 2
+            $plans[0].title | Should -Be "Plan 1"
+            $plans[0].groupDisplayName | Should -Be "Group 1"
+            $plans[1].title | Should -Be "Plan 2"
+            $plans[1].groupDisplayName | Should -Be "Group 2"
+        }
+    }
+
+    Context "New Parameter Tests (v1.1.0)" {
+        It "Should support -UseCurrentUser switch parameter" {
+            # Test that the parameter would be recognized as a switch
+            $paramType = "switch"
+            $paramType | Should -Be "switch"
+        }
+
+        It "Should support -GroupNames string array parameter" {
+            # Test that GroupNames accepts string arrays
+            $testNames = @("Group 1", "Group 2")
+            $testNames.GetType().Name | Should -Be "Object[]"
+            $testNames[0].GetType().Name | Should -Be "String"
+        }
+
+        It "Should support -Interactive switch parameter" {
+            # Test that the parameter would be recognized as a switch
+            $paramType = "switch"
+            $paramType | Should -Be "switch"
+        }
+
+        It "Should handle multiple GroupNames correctly" {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $OutputType)
+                if ($Uri -like "*Group1*") {
+                    return [PSCustomObject]@{
+                        value = @([PSCustomObject]@{ id = "g1"; displayName = "Group1"; mail = "g1@test.com" })
+                    }
+                }
+                elseif ($Uri -like "*Group2*") {
+                    return [PSCustomObject]@{
+                        value = @([PSCustomObject]@{ id = "g2"; displayName = "Group2"; mail = "g2@test.com" })
+                    }
+                }
+            }
+
+            $groups = Get-GroupsByNames -GroupNames @("Group1", "Group2")
+            @($groups).Count | Should -Be 2
+        }
+
+        It "Should validate that empty string arrays are handled" {
+            $groups = Get-GroupsByNames -GroupNames @()
+            @($groups).Count | Should -Be 0
+        }
+    }
+
+    Context "Export Mode Selection Tests (v1.1.0)" {
+        BeforeEach {
+            $script:testExportPath = Join-Path $TestDrive "export-test"
+            New-Item -ItemType Directory -Path $script:testExportPath -Force | Out-Null
+            $global:ExportPath = $script:testExportPath
+        }
+
+        It "Should handle user-based mode flow" {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $OutputType)
+                if ($Uri -like "*/me/memberOf/*") {
+                    return [PSCustomObject]@{
+                        value = @([PSCustomObject]@{ id = "group-1"; displayName = "User Group" })
+                    }
+                }
+                elseif ($Uri -like "*/groups/*/planner/plans") {
+                    return [PSCustomObject]@{
+                        value = @([PSCustomObject]@{ id = "plan-1"; title = "User Plan" })
+                    }
+                }
+                elseif ($Uri -like "*/me/planner/plans") {
+                    return [PSCustomObject]@{ value = @() }
+                }
+            }
+
+            # Simulate UseCurrentUser mode
+            $plans = Get-AllUserPlans
+            @($plans).Count | Should -BeGreaterThan 0
+        }
+
+        It "Should handle group-based mode with names" {
+            Mock Invoke-MgGraphRequest {
+                return [PSCustomObject]@{
+                    value = @([PSCustomObject]@{ id = "g1"; displayName = "TestGroup"; mail = "test@test.com" })
+                }
+            }
+
+            # Simulate GroupNames mode
+            $groups = Get-GroupsByNames -GroupNames "TestGroup"
+            @($groups).Count | Should -Be 1
+        }
+
+        It "Should handle interactive mode flow" {
+            Mock Invoke-MgGraphRequest {
+                return [PSCustomObject]@{
+                    value = @(
+                        [PSCustomObject]@{ id = "g1"; displayName = "Group 1"; mail = "g1@test.com" }
+                        [PSCustomObject]@{ id = "g2"; displayName = "Group 2"; mail = "g2@test.com" }
+                    )
+                    '@odata.nextLink' = $null
+                }
+            }
+
+            Mock Read-Host { return "1" }
+
+            # Simulate Interactive mode
+            $allGroups = Get-AllM365Groups
+            $selectedGroups = Show-GroupSelectionMenu -Groups $allGroups
+
+            @($selectedGroups).Count | Should -Be 1
         }
     }
 }

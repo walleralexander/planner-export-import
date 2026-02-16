@@ -1,0 +1,530 @@
+
+============================================================
+  Microsoft Planner Export/Import Tool - Test Runner
+============================================================
+
+Using Pester version: 5.7.1
+Test directory: C:\devel\Planner Export\tests
+
+Running tests...
+
+[95m
+[95mStarting discovery in 2 files.[0m
+[95mDiscovery found 97 tests in 885ms.[0m
+[95mRunning tests.[0m
+[2026-02-16 09:37:27] [INFO] Test message
+[2026-02-16 09:37:27] [ERROR] Error occurred
+[2026-02-16 09:37:27] [WARN] Warning message
+[2026-02-16 09:37:27] [INFO] Timestamped message
+[2026-02-16 09:37:27] [INFO] First message
+[2026-02-16 09:37:27] [INFO] Second message
+[91m[-] Export-PlannerData Script Tests.Export-ReadableSummary Function Tests.Should display statistics correctly[0m[90m 99ms (97ms|3ms)[0m
+[91m Expected regular expression 'Nicht begonnen:\s+1' to match '================================================================================
+[91m PLANNER EXPORT - ZUSAMMENFASSUNG
+[91m Plan: Test Plan
+[91m Exportiert am: 16.02.2026 09:37:28
+[91m ================================================================================
+[91m KATEGORIEN / LABELS:
+[91m   SyncRoot: System.Object
+[91m ------------------------------------------------------------
+[91m BUCKET: To Do
+[91m ------------------------------------------------------------
+[91m   [ ] Nicht begonnen Not Started
+[91m   [~] In Bearbeitung In Progress
+[91m   [x] Abgeschlossen Completed
+[91m ================================================================================
+[91m STATISTIK:
+[91m   Buckets: 1
+[91m   Tasks gesamt: 3
+[91m   Nicht begonnen: 
+[91m   In Bearbeitung: 
+[91m   Abgeschlossen: 
+[91m ================================================================================
+[91m ', but it did not match.
+[91m at $content | Should -Match "Nicht begonnen:\s+1", C:\devel\Planner Export\tests\Export-PlannerData.Tests.ps1:634
+[91m bei Invoke-Assertion, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 8250
+[91m bei Should<End>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 8193
+[91m bei <ScriptBlock>, C:\devel\Planner Export\tests\Export-PlannerData.Tests.ps1: Zeile 634
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2157
+[91m bei Invoke-TestItem, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1199
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 835
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1688
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.ps1: Zeile 3
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 3260
+[91m bei Invoke-InNewScriptScope, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 3267
+[91m bei Run-Test, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1691
+[91m bei Invoke-Test, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2512
+[91m bei Invoke-Pester<End>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 4960
+[91m bei <ScriptBlock>, C:\devel\Planner Export\tests\Run-Tests.ps1: Zeile 158[0m
+[2026-02-16 09:37:28] [INFO] Test
+[2026-02-16 09:37:49] [INFO] Lade alle verf«¨gbaren M365-Gruppen...
+[2026-02-16 09:37:49] [INFO] 2 M365-Gruppen gefunden
+[2026-02-16 09:37:49] [INFO] Lade alle verf«¨gbaren M365-Gruppen...
+[2026-02-16 09:37:49] [INFO] 2 M365-Gruppen gefunden
+[2026-02-16 09:37:49] [INFO] Lade alle verf«¨gbaren M365-Gruppen...
+[2026-02-16 09:37:49] [INFO] 0 M365-Gruppen gefunden
+[2026-02-16 09:37:50] [INFO] Lade alle verf«¨gbaren M365-Gruppen...
+[2026-02-16 09:37:50] [ERROR] Fehler beim Laden der M365-Gruppen: API Error
+[2026-02-16 09:37:50] [INFO] Suche Gruppen nach Namen: Projektteam Alpha
+[2026-02-16 09:37:50] [INFO]   1 Gruppe(n) gefunden f«¨r: Projektteam Alpha
+[2026-02-16 09:37:50] [OK]     -> Projektteam Alpha (group-1)
+[2026-02-16 09:37:50] [INFO] Insgesamt 1 eindeutige Gruppe(n) gefunden
+[91m[-] Export-PlannerData Script Tests.Get-GroupsByNames Function Tests (v1.1.0).Should find groups by exact name[0m[90m 141ms (140ms|1ms)[0m
+[91m Expected 1, but got $null.
+[91m at $groups.Count | Should -Be 1, C:\devel\Planner Export\tests\Export-PlannerData.Tests.ps1:882
+[91m bei Invoke-Assertion, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 8250
+[91m bei Should<End>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 8189
+[91m bei <ScriptBlock>, C:\devel\Planner Export\tests\Export-PlannerData.Tests.ps1: Zeile 882
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2157
+[91m bei Invoke-TestItem, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1199
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 835
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1688
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.ps1: Zeile 3
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 3260
+[91m bei Invoke-InNewScriptScope, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 3267
+[91m bei Run-Test, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1691
+[91m bei Invoke-Test, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2512
+[91m bei Invoke-Pester<End>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 4960
+[91m bei <ScriptBlock>, C:\devel\Planner Export\tests\Run-Tests.ps1: Zeile 158[0m
+[2026-02-16 09:37:50] [INFO] Suche Gruppen nach Namen: Projektteam Alpha, Marketing
+[2026-02-16 09:37:50] [INFO]   1 Gruppe(n) gefunden f«¨r: Projektteam Alpha
+[2026-02-16 09:37:50] [OK]     -> Projektteam Alpha (group-1)
+[2026-02-16 09:37:50] [INFO]   1 Gruppe(n) gefunden f«¨r: Marketing
+[2026-02-16 09:37:50] [OK]     -> Marketing (group-2)
+[2026-02-16 09:37:50] [INFO] Insgesamt 2 eindeutige Gruppe(n) gefunden
+[2026-02-16 09:37:50] [ERROR] Keine Gruppennamen angegeben
+[2026-02-16 09:37:50] [INFO] Suche Gruppen nach Namen: , Valid Group,   
+[2026-02-16 09:37:50] [WARN]   «oberspringe leeren Gruppennamen
+[2026-02-16 09:37:50] [INFO]   1 Gruppe(n) gefunden f«¨r: Valid Group
+[2026-02-16 09:37:50] [OK]     -> Valid Group (group-1)
+[2026-02-16 09:37:50] [WARN]   «oberspringe leeren Gruppennamen
+[2026-02-16 09:37:50] [INFO] Insgesamt 1 eindeutige Gruppe(n) gefunden
+[91m[-] Export-PlannerData Script Tests.Get-GroupsByNames Function Tests (v1.1.0).Should skip empty group names[0m[90m 91ms (90ms|1ms)[0m
+[91m Expected 1, but got $null.
+[91m at $groups.Count | Should -Be 1, C:\devel\Planner Export\tests\Export-PlannerData.Tests.ps1:921
+[91m bei Invoke-Assertion, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 8250
+[91m bei Should<End>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 8189
+[91m bei <ScriptBlock>, C:\devel\Planner Export\tests\Export-PlannerData.Tests.ps1: Zeile 921
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2157
+[91m bei Invoke-TestItem, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1199
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 835
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1688
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.ps1: Zeile 3
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 3260
+[91m bei Invoke-InNewScriptScope, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 3267
+[91m bei Run-Test, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1691
+[91m bei Invoke-Test, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2512
+[91m bei Invoke-Pester<End>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 4960
+[91m bei <ScriptBlock>, C:\devel\Planner Export\tests\Run-Tests.ps1: Zeile 158[0m
+[2026-02-16 09:37:50] [INFO] Suche Gruppen nach Namen: Test Group
+[2026-02-16 09:37:50] [INFO]   2 Gruppe(n) gefunden f«¨r: Test Group
+[2026-02-16 09:37:50] [OK]     -> Test Group (group-1)
+[2026-02-16 09:37:50] [INFO] Insgesamt 1 eindeutige Gruppe(n) gefunden
+[91m[-] Export-PlannerData Script Tests.Get-GroupsByNames Function Tests (v1.1.0).Should avoid duplicate groups[0m[90m 77ms (57ms|20ms)[0m
+[91m Expected 1, but got $null.
+[91m at $groups.Count | Should -Be 1, C:\devel\Planner Export\tests\Export-PlannerData.Tests.ps1:937
+[91m bei Invoke-Assertion, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 8250
+[91m bei Should<End>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 8189
+[91m bei <ScriptBlock>, C:\devel\Planner Export\tests\Export-PlannerData.Tests.ps1: Zeile 937
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2157
+[91m bei Invoke-TestItem, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1199
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 835
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1688
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.ps1: Zeile 3
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 3260
+[91m bei Invoke-InNewScriptScope, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 3267
+[91m bei Run-Test, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1691
+[91m bei Invoke-Test, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2512
+[91m bei Invoke-Pester<End>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 4960
+[91m bei <ScriptBlock>, C:\devel\Planner Export\tests\Run-Tests.ps1: Zeile 158[0m
+[2026-02-16 09:37:50] [INFO] Suche Gruppen nach Namen: NonExistent
+[2026-02-16 09:37:50] [WARN]   Keine Antwort vom Server f«¨r Gruppe: NonExistent
+[2026-02-16 09:37:50] [INFO] Insgesamt 0 eindeutige Gruppe(n) gefunden
+[2026-02-16 09:37:50] [INFO] Suche Gruppen nach Namen: NonExistent
+[2026-02-16 09:37:50] [WARN]   Keine Gruppe gefunden mit Namen: NonExistent
+[2026-02-16 09:37:50] [INFO] Insgesamt 0 eindeutige Gruppe(n) gefunden
+[2026-02-16 09:37:50] [INFO] Suche Gruppen nach Namen: Test Group
+[2026-02-16 09:37:50] [ERROR]   Fehler bei der Suche nach Gruppe 'Test Group': API Error: Access Denied
+[2026-02-16 09:37:50] [INFO] Insgesamt 0 eindeutige Gruppe(n) gefunden
+
+Verf«¨gbare M365-Gruppen:
+
+  [1] Group 1
+      g1@test.com
+  [2] Group 2
+      g2@test.com
+  [3] Group 3
+      g3@test.com
+
+  [A] Alle Gruppen
+  [0] Abbrechen
+
+
+Verf«¨gbare M365-Gruppen:
+
+  [1] Group 1
+      g1@test.com
+  [2] Group 2
+      g2@test.com
+  [3] Group 3
+      g3@test.com
+
+  [A] Alle Gruppen
+  [0] Abbrechen
+
+
+Verf«¨gbare M365-Gruppen:
+
+  [1] Group 1
+      g1@test.com
+  [2] Group 2
+      g2@test.com
+  [3] Group 3
+      g3@test.com
+
+  [A] Alle Gruppen
+  [0] Abbrechen
+
+
+Verf«¨gbare M365-Gruppen:
+
+  [1] Group 1
+      g1@test.com
+  [2] Group 2
+      g2@test.com
+  [3] Group 3
+      g3@test.com
+
+  [A] Alle Gruppen
+  [0] Abbrechen
+
+[91m[-] Export-PlannerData Script Tests.Show-GroupSelectionMenu Function Tests (v1.1.0).Should return single group when user selects index 1[0m[90m 48ms (47ms|1ms)[0m
+[91m Expected 1, but got $null.
+[91m at $selected.Count | Should -Be 1, C:\devel\Planner Export\tests\Export-PlannerData.Tests.ps1:1015
+[91m bei Invoke-Assertion, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 8250
+[91m bei Should<End>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 8189
+[91m bei <ScriptBlock>, C:\devel\Planner Export\tests\Export-PlannerData.Tests.ps1: Zeile 1015
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2157
+[91m bei Invoke-TestItem, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1199
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 835
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1688
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.ps1: Zeile 3
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 3260
+[91m bei Invoke-InNewScriptScope, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 3267
+[91m bei Run-Test, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1691
+[91m bei Invoke-Test, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2512
+[91m bei Invoke-Pester<End>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 4960
+[91m bei <ScriptBlock>, C:\devel\Planner Export\tests\Run-Tests.ps1: Zeile 158[0m
+
+Verf«¨gbare M365-Gruppen:
+
+  [1] Group 1
+      g1@test.com
+  [2] Group 2
+      g2@test.com
+  [3] Group 3
+      g3@test.com
+
+  [A] Alle Gruppen
+  [0] Abbrechen
+
+
+Verf«¨gbare M365-Gruppen:
+
+  [1] Group 1
+      g1@test.com
+  [2] Group 2
+      g2@test.com
+  [3] Group 3
+      g3@test.com
+
+  [A] Alle Gruppen
+  [0] Abbrechen
+
+
+Verf«¨gbare M365-Gruppen:
+
+  [1] Group 1
+      g1@test.com
+  [2] Group 2
+      g2@test.com
+  [3] Group 3
+      g3@test.com
+
+  [A] Alle Gruppen
+  [0] Abbrechen
+
+
+Verf«¨gbare M365-Gruppen:
+
+  [1] Group 1
+      g1@test.com
+  [2] Group 2
+      g2@test.com
+  [3] Group 3
+      g3@test.com
+
+  [A] Alle Gruppen
+  [0] Abbrechen
+
+[2026-02-16 09:37:51] [INFO] Lade alle Pl«œne des Benutzers...
+[2026-02-16 09:37:51] [INFO] 1 M365-Gruppen des Benutzers gefunden
+[2026-02-16 09:37:51] [INFO] Pr«¨fe Gruppe: Test Group (group-1)
+[2026-02-16 09:37:51] [OK]   Plan gefunden: Test Plan
+[2026-02-16 09:37:51] [INFO] Insgesamt 1 Pl«œne gefunden
+[91m[-] Export-PlannerData Script Tests.Get-AllUserPlans Function Tests (v1.1.0).Should retrieve plans via user groups (Method 1)[0m[90m 98ms (96ms|1ms)[0m
+[91m Expected 1, but got $null.
+[91m at $plans.Count | Should -Be 1, C:\devel\Planner Export\tests\Export-PlannerData.Tests.ps1:1087
+[91m bei Invoke-Assertion, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 8250
+[91m bei Should<End>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 8189
+[91m bei <ScriptBlock>, C:\devel\Planner Export\tests\Export-PlannerData.Tests.ps1: Zeile 1087
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2157
+[91m bei Invoke-TestItem, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1199
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 835
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1688
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.ps1: Zeile 3
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 3260
+[91m bei Invoke-InNewScriptScope, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 3267
+[91m bei Run-Test, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1691
+[91m bei Invoke-Test, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2512
+[91m bei Invoke-Pester<End>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 4960
+[91m bei <ScriptBlock>, C:\devel\Planner Export\tests\Run-Tests.ps1: Zeile 158[0m
+[2026-02-16 09:37:51] [INFO] Lade alle Pl«œne des Benutzers...
+[2026-02-16 09:37:51] [INFO] 1 M365-Gruppen des Benutzers gefunden
+[2026-02-16 09:37:51] [INFO] Pr«¨fe Gruppe: Group 1 (group-1)
+[2026-02-16 09:37:51] [OK]   Plan gefunden: Plan from Group
+[2026-02-16 09:37:51] [OK]   Zus«œtzlicher Plan gefunden: Additional Plan
+[2026-02-16 09:37:51] [INFO] Insgesamt 2 Pl«œne gefunden
+[2026-02-16 09:37:51] [INFO] Lade alle Pl«œne des Benutzers...
+[2026-02-16 09:37:51] [INFO] 1 M365-Gruppen des Benutzers gefunden
+[2026-02-16 09:37:51] [INFO] Pr«¨fe Gruppe: Group 1 (group-1)
+[2026-02-16 09:37:51] [OK]   Plan gefunden: Same Plan
+[2026-02-16 09:37:51] [INFO] Insgesamt 1 Pl«œne gefunden
+[91m[-] Export-PlannerData Script Tests.Get-AllUserPlans Function Tests (v1.1.0).Should avoid duplicate plans from both methods[0m[90m 93ms (92ms|1ms)[0m
+[91m Expected 1, but got $null.
+[91m at $plans.Count | Should -Be 1, C:\devel\Planner Export\tests\Export-PlannerData.Tests.ps1:1154
+[91m bei Invoke-Assertion, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 8250
+[91m bei Should<End>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 8189
+[91m bei <ScriptBlock>, C:\devel\Planner Export\tests\Export-PlannerData.Tests.ps1: Zeile 1154
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2157
+[91m bei Invoke-TestItem, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1199
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 835
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 893
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2024
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1985
+[91m bei Invoke-ScriptBlock, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2160
+[91m bei Invoke-Block, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 940
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1688
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.ps1: Zeile 3
+[91m bei <ScriptBlock>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 3260
+[91m bei Invoke-InNewScriptScope, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 3267
+[91m bei Run-Test, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 1691
+[91m bei Invoke-Test, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 2512
+[91m bei Invoke-Pester<End>, \\srvfi1\basisordner$\alexander.waller.HOHENEMS\Dokumente\WindowsPowerShell\Modules\Pester\5.7.1\Pester.psm1: Zeile 4960
+[91m bei <ScriptBlock>, C:\devel\Planner Export\tests\Run-Tests.ps1: Zeile 158[0m
+[2026-02-16 09:37:51] [INFO] Lade alle Pl«œne des Benutzers...
+[2026-02-16 09:37:51] [WARN] Benutzer ist kein Mitglied von M365-Gruppen
+[2026-02-16 09:37:51] [INFO] Insgesamt 0 Pl«œne gefunden
+[2026-02-16 09:37:51] [INFO] Lade alle Pl«œne des Benutzers...
+[2026-02-16 09:37:51] [WARN] Keine Antwort beim Abrufen der Benutzergruppen
+[2026-02-16 09:37:51] [INFO] Insgesamt 0 Pl«œne gefunden
+[2026-02-16 09:37:51] [INFO] Lade alle Pl«œne des Benutzers...
+[2026-02-16 09:37:51] [INFO] 1 M365-Gruppen des Benutzers gefunden
+[2026-02-16 09:37:51] [INFO] Pr«¨fe Gruppe: Empty Group (group-1)
+[2026-02-16 09:37:51] [INFO] Insgesamt 0 Pl«œne gefunden
+[2026-02-16 09:37:51] [INFO] Lade alle Pl«œne des Benutzers...
+[2026-02-16 09:37:51] [INFO] 1 M365-Gruppen des Benutzers gefunden
+[2026-02-16 09:37:51] [INFO] Pr«¨fe Gruppe: Group 1 (group-1)
+[2026-02-16 09:37:51] [WARN]   Keine Pl«œne in Gruppe Group 1 oder kein Zugriff: Access Denied
+[2026-02-16 09:37:51] [OK]   Zus«œtzlicher Plan gefunden: Accessible Plan
+[2026-02-16 09:37:51] [INFO] Insgesamt 1 Pl«œne gefunden
+[2026-02-16 09:37:51] [INFO] Lade alle Pl«œne des Benutzers...
+[2026-02-16 09:37:51] [INFO] 1 M365-Gruppen des Benutzers gefunden
+[2026-02-16 09:37:51] [INFO] Pr«¨fe Gruppe: Group 1 (group-1)
+[2026-02-16 09:37:51] [OK]   Plan gefunden: Group Plan
+[2026-02-16 09:37:51] [WARN] Direkter Planzugriff nicht verf«¨gbar, nutze Gruppen-Methode: Not supported
+[2026-02-16 09:37:51] [INFO] Insgesamt 1 Pl«œne gefunden
+[2026-02-16 09:37:51] [INFO] Lade alle Pl«œne des Benutzers...
+[2026-02-16 09:37:51] [ERROR] Fehler beim Laden der Pl«œne: Network Error
+[2026-02-16 09:37:51] [INFO] Lade alle Pl«œne des Benutzers...
+[2026-02-16 09:37:51] [INFO] 2 M365-Gruppen des Benutzers gefunden
+[2026-02-16 09:37:51] [INFO] Pr«¨fe Gruppe: Group 1 (group-1)
+[2026-02-16 09:37:51] [OK]   Plan gefunden: Plan 1
+[2026-02-16 09:37:51] [INFO] Pr«¨fe Gruppe: Group 2 (group-2)
+[2026-02-16 09:37:51] [OK]   Plan gefunden: Plan 2
+[2026-02-16 09:37:51] [INFO] Insgesamt 2 Pl«œne gefunden
+[2026-02-16 09:37:52] [INFO] Suche Gruppen nach Namen: Group1, Group2
+[2026-02-16 09:37:52] [INFO]   1 Gruppe(n) gefunden f«¨r: Group1
+[2026-02-16 09:37:52] [OK]     -> Group1 (g1)
+[2026-02-16 09:37:52] [INFO]   1 Gruppe(n) gefunden f«¨r: Group2
+[2026-02-16 09:37:52] [OK]     -> Group2 (g2)
+[2026-02-16 09:37:52] [INFO] Insgesamt 2 eindeutige Gruppe(n) gefunden
+[2026-02-16 09:37:52] [ERROR] Keine Gruppennamen angegeben
+[2026-02-16 09:37:52] [INFO] Lade alle Pl«œne des Benutzers...
+[2026-02-16 09:37:52] [INFO] 1 M365-Gruppen des Benutzers gefunden
+[2026-02-16 09:37:52] [INFO] Pr«¨fe Gruppe: User Group (group-1)
+[2026-02-16 09:37:52] [OK]   Plan gefunden: User Plan
+[2026-02-16 09:37:52] [INFO] Insgesamt 1 Pl«œne gefunden
+[2026-02-16 09:37:52] [INFO] Suche Gruppen nach Namen: TestGroup
+[2026-02-16 09:37:52] [INFO]   1 Gruppe(n) gefunden f«¨r: TestGroup
+[2026-02-16 09:37:52] [OK]     -> TestGroup (g1)
+[2026-02-16 09:37:52] [INFO] Insgesamt 1 eindeutige Gruppe(n) gefunden
+[2026-02-16 09:37:52] [INFO] Lade alle verf«¨gbaren M365-Gruppen...
+[2026-02-16 09:37:52] [INFO] 2 M365-Gruppen gefunden
+
+Verf«¨gbare M365-Gruppen:
+
+  [1] Group 1
+      g1@test.com
+  [2] Group 2
+      g2@test.com
+
+  [A] Alle Gruppen
+  [0] Abbrechen
+
+[2026-02-16 09:37:54] [INFO] Test import message
+[2026-02-16 09:37:54] [ERROR] Import error occurred
+[2026-02-16 09:37:54] [DRYRUN] Dry run message
+[2026-02-16 09:37:54] [INFO] Timestamped import message
+[2026-02-16 09:37:54] [INFO] First import message
+[2026-02-16 09:37:54] [INFO] Second import message
+[2026-02-16 09:37:54] [INFO] Lade Export-Datei: C:\Users\alexander.waller\AppData\Local\Temp\f2abd5fa-7ca5-40e6-a001-7bc0ef227fa5\import-test\TestPlan.json
+[2026-02-16 09:37:54] [INFO] Erstelle Plan 'Test Plan' in Gruppe group-1...
+[2026-02-16 09:37:54] [DRYRUN] [DRY RUN] W«¨rde Plan 'Test Plan' erstellen
+[2026-02-16 09:37:54] [DRYRUN] [DRY RUN] Buckets: 1
+[2026-02-16 09:37:54] [DRYRUN] [DRY RUN] Tasks: 1
+[2026-02-16 09:37:54] [INFO] Lade Export-Datei: C:\Users\alexander.waller\AppData\Local\Temp\f2abd5fa-7ca5-40e6-a001-7bc0ef227fa5\import-test\TestPlan.json
+[2026-02-16 09:37:54] [INFO] Erstelle Plan 'Test Plan' in Gruppe group-1...
+[2026-02-16 09:37:54] [DRYRUN] [DRY RUN] W«¨rde Plan 'Test Plan' erstellen
+[2026-02-16 09:37:54] [DRYRUN] [DRY RUN] Buckets: 1
+[2026-02-16 09:37:54] [DRYRUN] [DRY RUN] Tasks: 1
+[2026-02-16 09:37:55] [INFO] Test
+[32m[+] Import-PlannerData.Tests.ps1[0m[90m 1.7s (993ms|506ms)[0m
+[97mTests completed in 29.36s[0m
+[97mTests Passed: 90, [0m[91mFailed: 7, [0m[90mSkipped: 0, [0m[90mInconclusive: 0, [0m[37m[0m[90mNotRun: 0[0m
+
+============================================================
+  Test Summary
+============================================================
+
+Total Tests:   97
+Passed:        90
+Failed:        7
+
+Duration:      00:00:29.3618401
+
+Tests FAILED!

@@ -3,17 +3,20 @@
 ## Repository Description (About)
 
 **Deutsch:**
-```
+
+```Text
 PowerShell-Tool für vollständigen Export und Import von Microsoft Planner Daten via Graph API. Ideal für Lizenzwechsel und Tenant-Migrationen mit User-Mapping und automatischem Rate Limiting.
 ```
 
 **English:**
-```
+
+```Text
 PowerShell tool for complete Microsoft Planner backup and migration via Graph API. Perfect for license migrations and cross-tenant transfers with user mapping and automatic rate limiting.
 ```
 
 **Kurz (für GitHub "About" - max 350 Zeichen):**
-```
+
+```Text
 PowerShell tool for Microsoft Planner backup and migration via Graph API. Supports license migrations, cross-tenant transfers, user mapping, and dry-run mode.
 ```
 
@@ -23,28 +26,32 @@ PowerShell tool for Microsoft Planner backup and migration via Graph API. Suppor
 
 Füge diese Topics in den GitHub Repository Settings hinzu:
 
-### Primäre Topics:
+### Primäre Topics
+
 - `microsoft-planner`
 - `microsoft-graph`
 - `powershell`
 - `migration-tool`
 - `backup-restore`
 
-### Technologie Topics:
+### Technologie Topics
+
 - `microsoft365`
 - `office365`
 - `graph-api`
 - `powershell-script`
 - `azure-ad`
 
-### Use-Case Topics:
+### Use-Case Topics
+
 - `tenant-migration`
 - `cross-tenant-migration`
 - `license-migration`
 - `data-export`
 - `data-import`
 
-### Zusätzliche Topics:
+### Zusätzliche Topics
+
 - `planner-backup`
 - `planner-export`
 - `planner-migration`
@@ -53,9 +60,9 @@ Füge diese Topics in den GitHub Repository Settings hinzu:
 
 ---
 
-## Wie man Topics in GitHub hinzufügt:
+## Wie man Topics in GitHub hinzufügt
 
-1. Gehe zu: https://github.com/walleralexander/planner-export-import
+1. Gehe zu: <https://github.com/walleralexander/planner-export-import>
 2. Klicke auf das **Zahnrad-Icon** ⚙️ neben "About" (rechts oben)
 3. Füge die **Description** ein
 4. Füge die **Topics** ein (jeweils mit Komma getrennt oder einzeln)
@@ -64,16 +71,19 @@ Füge diese Topics in den GitHub Repository Settings hinzu:
 
 ---
 
-## Empfohlene GitHub Repository Settings:
+## Empfohlene GitHub Repository Settings
 
-### Features aktivieren:
+### Features aktivieren
+
 - ✅ Issues (für Bug Reports und Feature Requests)
 - ✅ Discussions (optional - für Community Q&A)
 - ❌ Wiki (nicht nötig, README ist ausreichend)
 - ❌ Projects (nicht nötig für dieses Projekt)
 
-### Social Preview Image:
+### Social Preview Image
+
 Optional kannst du ein Social Preview Image erstellen (1280x640px) mit:
+
 - Microsoft Planner Logo
 - Tool Name
 - "Export & Import Tool"
@@ -81,7 +91,7 @@ Optional kannst du ein Social Preview Image erstellen (1280x640px) mit:
 
 ---
 
-## README Badge Vorschläge:
+## README Badge Vorschläge
 
 Du kannst folgende Badges am Anfang des README.md hinzufügen:
 
