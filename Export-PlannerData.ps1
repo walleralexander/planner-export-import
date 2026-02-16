@@ -66,12 +66,15 @@
 
 param(
     [Parameter(Mandatory = $false)]
+    [ValidateNotNullOrEmpty()]
     [string]$ExportPath = "C:\planner-data\PlannerExport_$(Get-Date -Format 'yyyyMMdd_HHmmss')",
 
     [Parameter(Mandatory = $false)]
+    [ValidateNotNullOrEmpty()]
     [string[]]$GroupIds,
 
     [Parameter(Mandatory = $false)]
+    [ValidateNotNullOrEmpty()]
     [string[]]$GroupNames,
 
     [Parameter(Mandatory = $false)]
@@ -102,6 +105,131 @@ function Write-PlannerLog {
     catch {
         Write-Host "[ERROR] Konnte nicht in Log-Datei schreiben: $_" -ForegroundColor Red
     }
+}
+
+function Test-SafePath {
+    <#
+    .SYNOPSIS
+        Validiert einen Dateisystempfad auf Sicherheit und Zugänglichkeit
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('Export', 'Import')]
+        [string]$Mode = 'Export',
+
+        [Parameter(Mandatory = $false)]
+        [switch]$AllowCreate,
+
+        [Parameter(Mandatory = $false)]
+        [ref]$ErrorMessage
+    )
+
+    # 1. Null/Leer-Check
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        if ($ErrorMessage) { $ErrorMessage.Value = "Pfad darf nicht leer sein" }
+        return $false
+    }
+
+    # 2. UNC-Pfad blockieren (Sicherheit)
+    if ($Path -match '^\\\\') {
+        if ($ErrorMessage) { $ErrorMessage.Value = "UNC-Pfade (Netzwerkpfade) sind aus Sicherheitsgründen nicht erlaubt: $Path" }
+        return $false
+    }
+
+    # 3. Pfad normalisieren (Relative Pfade auflösen, .. entfernen)
+    try {
+        $normalizedPath = [System.IO.Path]::GetFullPath($Path)
+    }
+    catch {
+        if ($ErrorMessage) { $ErrorMessage.Value = "Ungültiges Pfad-Format: $($_.Exception.Message)" }
+        return $false
+    }
+
+    # 4. Modus-spezifische Validierung
+    if ($Mode -eq 'Export') {
+        # Export: Pfad muss schreibbar sein oder erstellt werden können
+        if (Test-Path $normalizedPath) {
+            # Existiert bereits - muss Verzeichnis sein
+            if (-not (Test-Path $normalizedPath -PathType Container)) {
+                if ($ErrorMessage) { $ErrorMessage.Value = "Pfad existiert bereits als Datei (kein Verzeichnis): $normalizedPath" }
+                return $false
+            }
+
+            # Schreibrechte testen
+            try {
+                $testFile = Join-Path $normalizedPath ".write_test_$([guid]::NewGuid().ToString('N').Substring(0,8))"
+                [System.IO.File]::WriteAllText($testFile, "test")
+                Remove-Item $testFile -Force -ErrorAction SilentlyContinue
+            }
+            catch {
+                if ($ErrorMessage) { $ErrorMessage.Value = "Keine Schreibrechte für Verzeichnis: $normalizedPath" }
+                return $false
+            }
+        }
+        else {
+            # Existiert nicht - übergeordnetes Verzeichnis prüfen
+            $parentPath = Split-Path $normalizedPath -Parent
+
+            if (-not $parentPath) {
+                if ($ErrorMessage) { $ErrorMessage.Value = "Kann übergeordnetes Verzeichnis nicht ermitteln für: $normalizedPath" }
+                return $false
+            }
+
+            if (-not (Test-Path $parentPath)) {
+                if ($AllowCreate) {
+                    # Prüfe ob Großeltern-Verzeichnis existiert (max 1 Ebene erstellen)
+                    $grandparentPath = Split-Path $parentPath -Parent
+                    if ($grandparentPath -and -not (Test-Path $grandparentPath)) {
+                        if ($ErrorMessage) { $ErrorMessage.Value = "Übergeordnetes Verzeichnis existiert nicht: $grandparentPath (maximal 1 Ebene kann automatisch erstellt werden)" }
+                        return $false
+                    }
+                }
+                else {
+                    if ($ErrorMessage) { $ErrorMessage.Value = "Übergeordnetes Verzeichnis existiert nicht: $parentPath" }
+                    return $false
+                }
+            }
+
+            # Schreibrechte für übergeordnetes Verzeichnis testen
+            try {
+                $testParentPath = if (Test-Path $parentPath) { $parentPath } else { Split-Path $parentPath -Parent }
+                $testFile = Join-Path $testParentPath ".write_test_$([guid]::NewGuid().ToString('N').Substring(0,8))"
+                [System.IO.File]::WriteAllText($testFile, "test")
+                Remove-Item $testFile -Force -ErrorAction SilentlyContinue
+            }
+            catch {
+                if ($ErrorMessage) { $ErrorMessage.Value = "Keine Schreibrechte für übergeordnetes Verzeichnis: $testParentPath" }
+                return $false
+            }
+        }
+    }
+    elseif ($Mode -eq 'Import') {
+        # Import: Pfad muss existieren und lesbar sein
+        if (-not (Test-Path $normalizedPath)) {
+            if ($ErrorMessage) { $ErrorMessage.Value = "Import-Verzeichnis existiert nicht: $normalizedPath" }
+            return $false
+        }
+
+        # Muss Verzeichnis sein
+        if (-not (Test-Path $normalizedPath -PathType Container)) {
+            if ($ErrorMessage) { $ErrorMessage.Value = "Import-Pfad ist kein Verzeichnis: $normalizedPath" }
+            return $false
+        }
+
+        # Leserechte testen
+        try {
+            Get-ChildItem $normalizedPath -ErrorAction Stop | Out-Null
+        }
+        catch {
+            if ($ErrorMessage) { $ErrorMessage.Value = "Keine Leserechte für Import-Verzeichnis: $normalizedPath" }
+            return $false
+        }
+    }
+
+    return $true
 }
 
 function Connect-ToGraph {
@@ -463,7 +591,18 @@ function Export-PlanDetails {
     $planData["UserMap"] = $userMap
 
     # Exportieren
-    $planFileName = ($Plan.title -replace '[\\/:*?"<>|]', '_')
+    # Sanitize plan title for filename (remove invalid characters and limit length)
+    $sanitizedTitle = ($Plan.title -replace '[\\/:*?"<>|]', '_')
+    # Limit filename length (Windows MAX_PATH consideration)
+    if ($sanitizedTitle.Length -gt 100) {
+        $sanitizedTitle = $sanitizedTitle.Substring(0, 100)
+    }
+    # Remove trailing dots/spaces (Windows filesystem restriction)
+    $planFileName = $sanitizedTitle.TrimEnd(' ', '.')
+    # Fallback for edge cases (empty after sanitization)
+    if ([string]::IsNullOrWhiteSpace($planFileName)) {
+        $planFileName = "unnamed_plan_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+    }
     $planFilePath = Join-Path $PlanExportPath "$planFileName.json"
 
     try {
@@ -660,11 +799,43 @@ Write-Host "  by Alexander Waller" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Export-Verzeichnis erstellen
-if (-not (Test-Path $ExportPath)) {
-    New-Item -ItemType Directory -Path $ExportPath -Force | Out-Null
+# Validiere Export-Pfad
+$pathValidationError = $null
+$isDefaultPattern = $ExportPath -match '^[A-Z]:\\planner-data\\PlannerExport_\d{8}_\d{6}$'
+
+if ($isDefaultPattern) {
+    # Für Standardpfad: Erlaube Erstellen des übergeordneten Verzeichnisses
+    if (-not (Test-SafePath -Path $ExportPath -Mode Export -AllowCreate -ErrorMessage ([ref]$pathValidationError))) {
+        Write-Host ""
+        Write-Host "Fehler: $pathValidationError" -ForegroundColor Red
+        Write-Host ""
+        exit 1
+    }
 }
-Write-PlannerLog "Export-Verzeichnis: $ExportPath"
+else {
+    # Für benutzerdefinierte Pfade: Strikte Validierung
+    if (-not (Test-SafePath -Path $ExportPath -Mode Export -ErrorMessage ([ref]$pathValidationError))) {
+        Write-Host ""
+        Write-Host "Fehler: $pathValidationError" -ForegroundColor Red
+        Write-Host ""
+        exit 1
+    }
+}
+
+# Export-Verzeichnis erstellen (Validierung bereits erfolgt)
+if (-not (Test-Path $ExportPath)) {
+    try {
+        New-Item -ItemType Directory -Path $ExportPath -ErrorAction Stop | Out-Null
+        Write-PlannerLog "Export-Verzeichnis erstellt: $ExportPath"
+    }
+    catch {
+        Write-PlannerLog "Fehler beim Erstellen des Export-Verzeichnisses: $_" "ERROR"
+        exit 1
+    }
+}
+else {
+    Write-PlannerLog "Verwende existierendes Export-Verzeichnis: $ExportPath"
+}
 
 # Microsoft.Graph Modul prüfen
 if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Planner)) {

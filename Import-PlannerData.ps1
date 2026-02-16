@@ -27,9 +27,11 @@
 
 param(
     [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
     [string]$ImportPath,
 
     [Parameter(Mandatory = $false)]
+    [ValidatePattern('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')]
     [string]$TargetGroupId,
 
     [Parameter(Mandatory = $false)]
@@ -45,8 +47,26 @@ param(
     [switch]$DryRun,
 
     [Parameter(Mandatory = $false)]
+    [ValidateRange(0, 10000)]
     [int]$ThrottleDelayMs = 500
 )
+
+# Script-level variables für Error Tracking und Caching
+$script:errorTracker = @{
+    Plans = @{ Attempted = 0; Succeeded = 0; Failed = @() }
+    Buckets = @{ Attempted = 0; Succeeded = 0; Failed = @() }
+    Tasks = @{ Attempted = 0; Succeeded = 0; Failed = @() }
+    TaskDetails = @{ Attempted = 0; Succeeded = 0; Failed = @() }
+    UserResolution = @{ Attempted = 0; CacheHits = 0; Succeeded = 0; Failed = @() }
+    Categories = @{
+        NetworkErrors = @()
+        PermissionErrors = @()
+        DataValidationErrors = @()
+        UnknownErrors = @()
+    }
+}
+
+$script:userResolveCache = @{}
 
 #region Funktionen
 
@@ -66,6 +86,311 @@ function Write-PlannerLog {
     }
     catch {
         Write-Host "[ERROR] Konnte nicht in Log-Datei schreiben: $_" -ForegroundColor Red
+    }
+}
+
+function Test-SafePath {
+    <#
+    .SYNOPSIS
+        Validiert einen Dateisystempfad auf Sicherheit und Zugänglichkeit
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $false)]
+        [ValidateSet('Export', 'Import')]
+        [string]$Mode = 'Export',
+
+        [Parameter(Mandatory = $false)]
+        [switch]$AllowCreate,
+
+        [Parameter(Mandatory = $false)]
+        [ref]$ErrorMessage
+    )
+
+    # 1. Null/Leer-Check
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        if ($ErrorMessage) { $ErrorMessage.Value = "Pfad darf nicht leer sein" }
+        return $false
+    }
+
+    # 2. UNC-Pfad blockieren (Sicherheit)
+    if ($Path -match '^\\\\') {
+        if ($ErrorMessage) { $ErrorMessage.Value = "UNC-Pfade (Netzwerkpfade) sind aus Sicherheitsgründen nicht erlaubt: $Path" }
+        return $false
+    }
+
+    # 3. Pfad normalisieren (Relative Pfade auflösen, .. entfernen)
+    try {
+        $normalizedPath = [System.IO.Path]::GetFullPath($Path)
+    }
+    catch {
+        if ($ErrorMessage) { $ErrorMessage.Value = "Ungültiges Pfad-Format: $($_.Exception.Message)" }
+        return $false
+    }
+
+    # 4. Modus-spezifische Validierung
+    if ($Mode -eq 'Export') {
+        # Export: Pfad muss schreibbar sein oder erstellt werden können
+        if (Test-Path $normalizedPath) {
+            # Existiert bereits - muss Verzeichnis sein
+            if (-not (Test-Path $normalizedPath -PathType Container)) {
+                if ($ErrorMessage) { $ErrorMessage.Value = "Pfad existiert bereits als Datei (kein Verzeichnis): $normalizedPath" }
+                return $false
+            }
+
+            # Schreibrechte testen
+            try {
+                $testFile = Join-Path $normalizedPath ".write_test_$([guid]::NewGuid().ToString('N').Substring(0,8))"
+                [System.IO.File]::WriteAllText($testFile, "test")
+                Remove-Item $testFile -Force -ErrorAction SilentlyContinue
+            }
+            catch {
+                if ($ErrorMessage) { $ErrorMessage.Value = "Keine Schreibrechte für Verzeichnis: $normalizedPath" }
+                return $false
+            }
+        }
+        else {
+            # Existiert nicht - übergeordnetes Verzeichnis prüfen
+            $parentPath = Split-Path $normalizedPath -Parent
+
+            if (-not $parentPath) {
+                if ($ErrorMessage) { $ErrorMessage.Value = "Kann übergeordnetes Verzeichnis nicht ermitteln für: $normalizedPath" }
+                return $false
+            }
+
+            if (-not (Test-Path $parentPath)) {
+                if ($AllowCreate) {
+                    # Prüfe ob Großeltern-Verzeichnis existiert (max 1 Ebene erstellen)
+                    $grandparentPath = Split-Path $parentPath -Parent
+                    if ($grandparentPath -and -not (Test-Path $grandparentPath)) {
+                        if ($ErrorMessage) { $ErrorMessage.Value = "Übergeordnetes Verzeichnis existiert nicht: $grandparentPath (maximal 1 Ebene kann automatisch erstellt werden)" }
+                        return $false
+                    }
+                }
+                else {
+                    if ($ErrorMessage) { $ErrorMessage.Value = "Übergeordnetes Verzeichnis existiert nicht: $parentPath" }
+                    return $false
+                }
+            }
+
+            # Schreibrechte für übergeordnetes Verzeichnis testen
+            try {
+                $testParentPath = if (Test-Path $parentPath) { $parentPath } else { Split-Path $parentPath -Parent }
+                $testFile = Join-Path $testParentPath ".write_test_$([guid]::NewGuid().ToString('N').Substring(0,8))"
+                [System.IO.File]::WriteAllText($testFile, "test")
+                Remove-Item $testFile -Force -ErrorAction SilentlyContinue
+            }
+            catch {
+                if ($ErrorMessage) { $ErrorMessage.Value = "Keine Schreibrechte für übergeordnetes Verzeichnis: $testParentPath" }
+                return $false
+            }
+        }
+    }
+    elseif ($Mode -eq 'Import') {
+        # Import: Pfad muss existieren und lesbar sein
+        if (-not (Test-Path $normalizedPath)) {
+            if ($ErrorMessage) { $ErrorMessage.Value = "Import-Verzeichnis existiert nicht: $normalizedPath" }
+            return $false
+        }
+
+        # Muss Verzeichnis sein
+        if (-not (Test-Path $normalizedPath -PathType Container)) {
+            if ($ErrorMessage) { $ErrorMessage.Value = "Import-Pfad ist kein Verzeichnis: $normalizedPath" }
+            return $false
+        }
+
+        # Leserechte testen
+        try {
+            Get-ChildItem $normalizedPath -ErrorAction Stop | Out-Null
+        }
+        catch {
+            if ($ErrorMessage) { $ErrorMessage.Value = "Keine Leserechte für Import-Verzeichnis: $normalizedPath" }
+            return $false
+        }
+    }
+
+    return $true
+}
+
+function Add-ErrorToTracker {
+    param(
+        [ValidateSet('Plan', 'Bucket', 'Task', 'TaskDetail', 'UserResolution')]
+        [string]$ItemType,
+        [string]$ItemName,
+        [object]$Exception,
+        [string]$Context
+    )
+
+    $errorDetails = @{
+        ItemType = $ItemType
+        ItemName = $ItemName
+        Context = $Context
+        Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Message = if ($Exception) { $Exception.Message } else { "Unbekannter Fehler" }
+        ExceptionType = if ($Exception) { $Exception.GetType().FullName } else { "N/A" }
+    }
+
+    # Add StatusCode if available
+    if ($null -ne $Exception -and $null -ne $Exception.Exception -and
+        $null -ne $Exception.Exception.Response) {
+        try {
+            $errorDetails.StatusCode = $Exception.Exception.Response.StatusCode.value__
+        }
+        catch {
+            $errorDetails.StatusCode = "N/A"
+        }
+    }
+    else {
+        $errorDetails.StatusCode = "N/A"
+    }
+
+    # Add to specific item type failures
+    $itemTypePlural = "$ItemType" + "s"
+    $script:errorTracker.$itemTypePlural.Failed += $errorDetails
+
+    # Categorize error
+    $errorMessage = $errorDetails.Message.ToLower()
+    $statusCode = $errorDetails.StatusCode
+
+    if ($statusCode -in @(408, 500, 502, 503, 504, "N/A") -or
+        $errorMessage -match "(timeout|timed out|connection|network|dns)") {
+        $script:errorTracker.Categories.NetworkErrors += $errorDetails
+    }
+    elseif ($statusCode -in @(401, 403) -or
+            $errorMessage -match "(unauthorized|forbidden|permission|access denied)") {
+        $script:errorTracker.Categories.PermissionErrors += $errorDetails
+    }
+    elseif ($statusCode -in @(400, 422) -or
+            $errorMessage -match "(validation|invalid|bad request|malformed)") {
+        $script:errorTracker.Categories.DataValidationErrors += $errorDetails
+    }
+    else {
+        $script:errorTracker.Categories.UnknownErrors += $errorDetails
+    }
+}
+
+function Write-ErrorSummary {
+    param([string]$OutputPath)
+
+    Write-Host ""
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host "  FEHLER-ZUSAMMENFASSUNG" -ForegroundColor Cyan
+    Write-Host "============================================================" -ForegroundColor Cyan
+    Write-Host ""
+
+    # Overall statistics
+    $totalFailed = $script:errorTracker.Plans.Failed.Count +
+                   $script:errorTracker.Buckets.Failed.Count +
+                   $script:errorTracker.Tasks.Failed.Count
+
+    Write-Host "Gesamtstatistik:" -ForegroundColor Yellow
+    Write-Host "  Pläne:    $($script:errorTracker.Plans.Succeeded)/$($script:errorTracker.Plans.Attempted) erfolgreich" -ForegroundColor $(if ($script:errorTracker.Plans.Failed.Count -eq 0) { "Green" } else { "Red" })
+    Write-Host "  Buckets:  $($script:errorTracker.Buckets.Succeeded)/$($script:errorTracker.Buckets.Attempted) erfolgreich" -ForegroundColor $(if ($script:errorTracker.Buckets.Failed.Count -eq 0) { "Green" } else { "Red" })
+    Write-Host "  Tasks:    $($script:errorTracker.Tasks.Succeeded)/$($script:errorTracker.Tasks.Attempted) erfolgreich" -ForegroundColor $(if ($script:errorTracker.Tasks.Failed.Count -eq 0) { "Green" } else { "Red" })
+
+    if ($script:errorTracker.UserResolution.Attempted -gt 0) {
+        Write-Host "  Benutzer: $($script:errorTracker.UserResolution.Succeeded)/$($script:errorTracker.UserResolution.Attempted) aufgelöst (Cache-Hits: $($script:errorTracker.UserResolution.CacheHits))" -ForegroundColor $(if ($script:errorTracker.UserResolution.Failed.Count -eq 0) { "Green" } else { "Yellow" })
+    }
+    Write-Host ""
+
+    # Error breakdown by category
+    if ($totalFailed -gt 0) {
+        Write-Host "Fehler nach Kategorie:" -ForegroundColor Yellow
+        if ($script:errorTracker.Categories.NetworkErrors.Count -gt 0) {
+            Write-Host "  Netzwerkfehler:         $($script:errorTracker.Categories.NetworkErrors.Count)" -ForegroundColor Red
+        }
+        if ($script:errorTracker.Categories.PermissionErrors.Count -gt 0) {
+            Write-Host "  Berechtigungsfehler:    $($script:errorTracker.Categories.PermissionErrors.Count)" -ForegroundColor Red
+        }
+        if ($script:errorTracker.Categories.DataValidationErrors.Count -gt 0) {
+            Write-Host "  Validierungsfehler:     $($script:errorTracker.Categories.DataValidationErrors.Count)" -ForegroundColor Red
+        }
+        if ($script:errorTracker.Categories.UnknownErrors.Count -gt 0) {
+            Write-Host "  Unbekannte Fehler:      $($script:errorTracker.Categories.UnknownErrors.Count)" -ForegroundColor Red
+        }
+        Write-Host ""
+
+        # Detailed failure list (limit to first 10 per type)
+        Write-Host "Fehlgeschlagene Elemente (max. 10 pro Typ):" -ForegroundColor Yellow
+
+        $displayedPlans = 0
+        foreach ($failure in $script:errorTracker.Plans.Failed) {
+            if ($displayedPlans++ -ge 10) { break }
+            Write-Host "  [PLAN] $($failure.ItemName)" -ForegroundColor Red
+            Write-Host "    Fehler: $($failure.Message)" -ForegroundColor Gray
+        }
+
+        $displayedBuckets = 0
+        foreach ($failure in $script:errorTracker.Buckets.Failed) {
+            if ($displayedBuckets++ -ge 10) { break }
+            Write-Host "  [BUCKET] $($failure.ItemName)" -ForegroundColor Red
+            Write-Host "    Kontext: $($failure.Context)" -ForegroundColor Gray
+            Write-Host "    Fehler: $($failure.Message)" -ForegroundColor Gray
+        }
+
+        $displayedTasks = 0
+        foreach ($failure in $script:errorTracker.Tasks.Failed) {
+            if ($displayedTasks++ -ge 10) { break }
+            Write-Host "  [TASK] $($failure.ItemName)" -ForegroundColor Red
+            Write-Host "    Kontext: $($failure.Context)" -ForegroundColor Gray
+            Write-Host "    Fehler: $($failure.Message)" -ForegroundColor Gray
+        }
+        Write-Host ""
+    }
+    else {
+        Write-Host "Keine Fehler aufgetreten!" -ForegroundColor Green
+        Write-Host ""
+    }
+
+    # Write JSON error report
+    $errorReport = @{
+        Timestamp = Get-Date -Format "o"
+        Summary = @{
+            TotalAttempted = $script:errorTracker.Plans.Attempted + $script:errorTracker.Buckets.Attempted + $script:errorTracker.Tasks.Attempted
+            TotalSucceeded = $script:errorTracker.Plans.Succeeded + $script:errorTracker.Buckets.Succeeded + $script:errorTracker.Tasks.Succeeded
+            TotalFailed = $totalFailed
+        }
+        Details = $script:errorTracker
+    }
+
+    $reportPath = Join-Path $OutputPath "import_errors.json"
+    try {
+        $errorReport | ConvertTo-Json -Depth 10 | Out-File -FilePath $reportPath -Encoding utf8BOM -ErrorAction Stop
+        Write-Host "Detaillierter Fehlerbericht gespeichert: $reportPath" -ForegroundColor Cyan
+    }
+    catch {
+        Write-PlannerLog "Warnung: Konnte Fehlerbericht nicht speichern: $_" "WARN"
+    }
+
+    # Determine exit code
+    if ($script:errorTracker.Plans.Failed.Count -gt 0) {
+        return 2  # Total failure
+    }
+    elseif ($totalFailed -gt 0) {
+        return 1  # Partial failure
+    }
+    else {
+        return 0  # Success
+    }
+}
+
+function Write-CacheStatistics {
+    $totalLookups = $script:errorTracker.UserResolution.Attempted
+    $cacheHits = $script:errorTracker.UserResolution.CacheHits
+    $cacheMisses = $totalLookups - $cacheHits
+
+    if ($totalLookups -gt 0) {
+        $hitRate = [math]::Round(($cacheHits / $totalLookups) * 100, 2)
+        $apiCallsSaved = $cacheHits * 2
+
+        Write-PlannerLog "Benutzer-Auflösung Cache-Statistik:" "OK"
+        Write-PlannerLog "  Gesamt-Lookups:     $totalLookups" "INFO"
+        Write-PlannerLog "  Cache-Hits:         $cacheHits" "INFO"
+        Write-PlannerLog "  Cache-Misses:       $cacheMisses" "INFO"
+        Write-PlannerLog "  Trefferquote:       $hitRate%" "INFO"
+        Write-PlannerLog "  Eingesparte API-Calls (geschätzt): $apiCallsSaved" "OK"
     }
 }
 
@@ -97,21 +422,87 @@ function Invoke-GraphWithRetry {
         }
         catch {
             $attempt++
-            if ($_.Exception.Response.StatusCode -eq 429 -or $_.Exception.Message -match "429") {
-                # Rate Limited - warten und erneut versuchen
-                $retryAfter = 30
-                if ($_.Exception.Response.Headers -and $_.Exception.Response.Headers["Retry-After"]) {
-                    $retryAfter = [int]$_.Exception.Response.Headers["Retry-After"]
+
+            # Defensive null checks before accessing Response properties
+            $statusCode = $null
+            $hasResponse = $false
+
+            if ($null -ne $_.Exception -and $null -ne $_.Exception.Response) {
+                $hasResponse = $true
+                try {
+                    $statusCode = [int]$_.Exception.Response.StatusCode
                 }
-                Write-PlannerLog "Rate Limited. Warte $retryAfter Sekunden... (Versuch $attempt/$MaxRetries)" "WARN"
+                catch {
+                    Write-PlannerLog "Warnung: StatusCode nicht verfügbar: $($_.Exception.Message)" "WARN"
+                }
+            }
+
+            # Log exception details for debugging
+            $exceptionType = if ($_.Exception) { $_.Exception.GetType().FullName } else { "Unknown" }
+            $errorMessage = if ($_.Exception) { $_.Exception.Message } else { $_.ToString() }
+
+            # Detect transient vs permanent errors
+            $isTransient = $false
+            $isRateLimit = $false
+
+            if ($statusCode -eq 429 -or $errorMessage -match "429") {
+                $isRateLimit = $true
+                $isTransient = $true
+            }
+            elseif ($statusCode -in @(408, 500, 502, 503, 504) -or
+                    $errorMessage -match "(timeout|timed out|connection|network|temporary)") {
+                $isTransient = $true
+            }
+            elseif ($statusCode -in @(400, 401, 403, 404) -or
+                    $errorMessage -match "(unauthorized|forbidden|not found|bad request)") {
+                $isTransient = $false
+            }
+            else {
+                $isTransient = ($attempt -lt $MaxRetries)
+            }
+
+            # Handle rate limiting (429)
+            if ($isRateLimit) {
+                $retryAfter = 30
+
+                if ($hasResponse -and $null -ne $_.Exception.Response.Headers) {
+                    try {
+                        $retryAfterHeader = $_.Exception.Response.Headers["Retry-After"]
+                        if ($retryAfterHeader) {
+                            $retryAfter = [int]$retryAfterHeader
+                        }
+                    }
+                    catch {
+                        Write-PlannerLog "Warnung: Retry-After Header konnte nicht gelesen werden, verwende Standard: $retryAfter Sekunden" "WARN"
+                    }
+                }
+
+                Write-PlannerLog "Rate Limited (429). Warte $retryAfter Sekunden... (Versuch $attempt/$MaxRetries)" "WARN"
+                Write-PlannerLog "  Fehlerdetails: $errorMessage" "WARN"
                 Start-Sleep -Seconds $retryAfter
             }
             elseif ($attempt -ge $MaxRetries) {
+                Write-PlannerLog "Maximale Anzahl an Wiederholungen erreicht ($MaxRetries). Fehlertyp: $exceptionType" "ERROR"
+                Write-PlannerLog "  URI: $Uri" "ERROR"
+                Write-PlannerLog "  StatusCode: $(if ($statusCode) { $statusCode } else { 'N/A' })" "ERROR"
+                Write-PlannerLog "  Nachricht: $errorMessage" "ERROR"
                 throw $_
             }
+            elseif ($isTransient) {
+                $waitSeconds = 2 * $attempt
+                Write-PlannerLog "Vorübergehender Fehler bei Graph-Request (Versuch $attempt/$MaxRetries)" "WARN"
+                Write-PlannerLog "  Fehlertyp: $exceptionType" "WARN"
+                Write-PlannerLog "  StatusCode: $(if ($statusCode) { $statusCode } else { 'N/A' })" "WARN"
+                Write-PlannerLog "  Nachricht: $errorMessage" "WARN"
+                Write-PlannerLog "  Warte $waitSeconds Sekunden vor erneutem Versuch..." "WARN"
+                Start-Sleep -Seconds $waitSeconds
+            }
             else {
-                Write-PlannerLog "Fehler bei Graph-Request (Versuch $attempt/$MaxRetries): $_" "WARN"
-                Start-Sleep -Seconds (2 * $attempt)
+                Write-PlannerLog "Permanenter Fehler erkannt, breche ab" "ERROR"
+                Write-PlannerLog "  Fehlertyp: $exceptionType" "ERROR"
+                Write-PlannerLog "  StatusCode: $(if ($statusCode) { $statusCode } else { 'N/A' })" "ERROR"
+                Write-PlannerLog "  Nachricht: $errorMessage" "ERROR"
+                throw $_
             }
         }
     }
@@ -148,21 +539,49 @@ function Connect-ToGraph {
 function Resolve-UserId {
     param([string]$OldUserId, [hashtable]$OldUserMap)
 
-    # Wenn UserMapping vorhanden, verwende es
-    if ($UserMapping -and $UserMapping.ContainsKey($OldUserId)) {
-        return $UserMapping[$OldUserId]
+    # Track resolution attempt
+    $script:errorTracker.UserResolution.Attempted++
+
+    # Check cache first
+    if ($script:userResolveCache.ContainsKey($OldUserId)) {
+        $script:errorTracker.UserResolution.CacheHits++
+        $cached = $script:userResolveCache[$OldUserId]
+
+        if ($cached.Status -eq "Success") {
+            return $cached.NewUserId
+        }
+        else {
+            # Previous lookup failed, don't retry
+            return $null
+        }
     }
 
-    # Versuche den User Ã¼ber UPN oder Mail in der neuen Umgebung zu finden
+    # UserMapping has highest priority
+    if ($UserMapping -and $UserMapping.ContainsKey($OldUserId)) {
+        $resolvedId = $UserMapping[$OldUserId]
+        $script:userResolveCache[$OldUserId] = @{
+            NewUserId = $resolvedId
+            Status = "Success"
+            Timestamp = Get-Date
+            Method = "UserMapping"
+        }
+        $script:errorTracker.UserResolution.Succeeded++
+        return $resolvedId
+    }
+
+    # Try to find user in new environment
+    $resolvedId = $null
+
     if ($OldUserMap -and $OldUserMap[$OldUserId]) {
         $upn = $OldUserMap[$OldUserId].UserPrincipalName
         $mail = $OldUserMap[$OldUserId].Mail
 
+        # Try UPN lookup
         if ($upn) {
             try {
                 $user = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/users/$upn`?`$select=id" -OutputType PSObject -ErrorAction SilentlyContinue
-                if ($user) {
-                    return $user.id
+                if ($user -and $user.id) {
+                    $resolvedId = $user.id
                 }
             }
             catch {
@@ -170,11 +589,12 @@ function Resolve-UserId {
             }
         }
 
-        if ($mail -and $mail -ne $upn) {
+        # Try Mail lookup if UPN failed
+        if (-not $resolvedId -and $mail -and $mail -ne $upn) {
             try {
                 $user = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/users/$mail`?`$select=id" -OutputType PSObject -ErrorAction SilentlyContinue
-                if ($user) {
-                    return $user.id
+                if ($user -and $user.id) {
+                    $resolvedId = $user.id
                 }
             }
             catch {
@@ -183,18 +603,47 @@ function Resolve-UserId {
         }
     }
 
-    # Fallback: Versuche die alte ID direkt (gleicher Tenant)
-    try {
-        $user = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/users/$OldUserId`?`$select=id" -OutputType PSObject -ErrorAction SilentlyContinue
-        if ($user) {
-            return $user.id
+    # Fallback: Try original ID
+    if (-not $resolvedId) {
+        try {
+            $user = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/users/$OldUserId`?`$select=id" -OutputType PSObject -ErrorAction SilentlyContinue
+            if ($user -and $user.id) {
+                $resolvedId = $user.id
+            }
+        }
+        catch {
+            Write-PlannerLog "  Warnung: Benutzer konnte nicht per ID gefunden werden: $OldUserId" "WARN"
         }
     }
-    catch {
-        Write-PlannerLog "  Warnung: Benutzer konnte nicht per ID gefunden werden: $OldUserId" "WARN"
-    }
 
-    return $null
+    # Cache the result (success or failure)
+    if ($resolvedId) {
+        $script:userResolveCache[$OldUserId] = @{
+            NewUserId = $resolvedId
+            Status = "Success"
+            Timestamp = Get-Date
+        }
+        $script:errorTracker.UserResolution.Succeeded++
+        return $resolvedId
+    }
+    else {
+        # Cache the failure to avoid repeated lookups
+        $script:userResolveCache[$OldUserId] = @{
+            NewUserId = $null
+            Status = "Failed"
+            Timestamp = Get-Date
+        }
+
+        # Add to error tracker
+        $userName = if ($OldUserMap -and $OldUserMap[$OldUserId]) {
+            $OldUserMap[$OldUserId].DisplayName
+        } else {
+            $OldUserId
+        }
+        Add-ErrorToTracker -ItemType "UserResolution" -ItemName $userName -Exception $null -Context "Benutzer-ID: $OldUserId"
+
+        return $null
+    }
 }
 
 function Import-PlanFromJson {
@@ -217,6 +666,12 @@ function Import-PlanFromJson {
         return $null
     }
 
+    # Validiere Gruppen-ID Format (originalGroupId stammt aus JSON, nicht vertrauenswürdig)
+    if (-not $TargetGroupId -and $originalGroupId -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') {
+        Write-PlannerLog "Ungültige Gruppen-ID in Export-Datei: $originalGroupId" "ERROR"
+        return $null
+    }
+
     Write-PlannerLog "Erstelle Plan '$planTitle' in Gruppe $groupId..."
 
     if ($DryRun) {
@@ -227,11 +682,21 @@ function Import-PlanFromJson {
     }
 
     # 1. Plan erstellen
-    $newPlan = Invoke-GraphWithRetry -Method POST -Uri "https://graph.microsoft.com/v1.0/planner/plans" -Body @{
-        owner = $groupId
-        title = $planTitle
+    $script:errorTracker.Plans.Attempted++
+
+    try {
+        $newPlan = Invoke-GraphWithRetry -Method POST -Uri "https://graph.microsoft.com/v1.0/planner/plans" -Body @{
+            owner = $groupId
+            title = $planTitle
+        }
+        Write-PlannerLog "  Plan erstellt: $($newPlan.id)" "OK"
+        $script:errorTracker.Plans.Succeeded++
     }
-    Write-PlannerLog "  Plan erstellt: $($newPlan.id)" "OK"
+    catch {
+        Add-ErrorToTracker -ItemType "Plan" -ItemName $planTitle -Exception $_ -Context "Erstellen des Plans"
+        Write-PlannerLog "Kritischer Fehler: Plan konnte nicht erstellt werden: $_" "ERROR"
+        return $null
+    }
 
     # 2. Kategorien/Labels setzen
     if ($planData.Categories) {
@@ -262,9 +727,10 @@ function Import-PlanFromJson {
         }
     }
 
-    # 3. Buckets erstellen (ID-Mapping fÃ¼r Tasks)
+    # 3. Buckets erstellen (ID-Mapping für Tasks)
     $bucketMapping = @{}
     foreach ($bucket in ($planData.Buckets | Sort-Object orderHint)) {
+        $script:errorTracker.Buckets.Attempted++
         try {
             $newBucket = Invoke-GraphWithRetry -Method POST -Uri "https://graph.microsoft.com/v1.0/planner/buckets" -Body @{
                 name    = $bucket.name
@@ -272,8 +738,10 @@ function Import-PlanFromJson {
             }
             $bucketMapping[$bucket.id] = $newBucket.id
             Write-PlannerLog "  Bucket erstellt: $($bucket.name)" "OK"
+            $script:errorTracker.Buckets.Succeeded++
         }
         catch {
+            Add-ErrorToTracker -ItemType "Bucket" -ItemName $bucket.name -Exception $_ -Context "Plan: $planTitle"
             Write-PlannerLog "  Fehler beim Erstellen von Bucket '$($bucket.name)': $_" "ERROR"
         }
     }
@@ -293,13 +761,15 @@ function Import-PlanFromJson {
 
     foreach ($task in $planData.Tasks) {
         $taskCounter++
-        Write-Progress -Activity "Importiere Tasks fÃ¼r '$planTitle'" -Status "Task $taskCounter von $totalTasks: $($task.title)" -PercentComplete (($taskCounter / $totalTasks) * 100)
+        Write-Progress -Activity "Importiere Tasks fÃ¼r '$planTitle'" -Status "Task $taskCounter von ${totalTasks}: $($task.title)" -PercentComplete (($taskCounter / $totalTasks) * 100)
 
         # Abgeschlossene Tasks Ã¼berspringen wenn gewÃ¼nscht
         if ($SkipCompletedTasks -and $task.percentComplete -eq 100) {
             Write-PlannerLog "  Task Ã¼bersprungen (abgeschlossen): $($task.title)"
             continue
         }
+
+        $script:errorTracker.Tasks.Attempted++
 
         $newBucketId = if ($task.bucketId -and $bucketMapping.ContainsKey($task.bucketId)) {
             $bucketMapping[$task.bucketId]
@@ -363,10 +833,12 @@ function Import-PlanFromJson {
             $newTask = Invoke-GraphWithRetry -Method POST -Uri "https://graph.microsoft.com/v1.0/planner/tasks" -Body $taskBody
             $taskMapping[$task.id] = $newTask.id
             Write-PlannerLog "  Task erstellt: $($task.title)" "OK"
+            $script:errorTracker.Tasks.Succeeded++
 
             # 5. Task-Details setzen (Beschreibung, Checkliste, Referenzen)
             $detail = $planData.TaskDetails | Where-Object { $_.taskId -eq $task.id }
             if ($detail) {
+                $script:errorTracker.TaskDetails.Attempted++
                 $hasDetails = $false
                 $detailBody = @{}
 
@@ -416,7 +888,7 @@ function Import-PlanFromJson {
 
                 if ($hasDetails) {
                     try {
-                        # ETag fÃ¼r Task-Details holen
+                        # ETag für Task-Details holen
                         $newTaskDetails = Invoke-GraphWithRetry -Method GET -Uri "https://graph.microsoft.com/v1.0/planner/tasks/$($newTask.id)/details"
 
                         $patchParams = @{
@@ -429,21 +901,24 @@ function Import-PlanFromJson {
                         }
                         Invoke-MgGraphRequest @patchParams
                         Write-PlannerLog "    Details gesetzt fÃ¼r: $($task.title)" "OK"
+                        $script:errorTracker.TaskDetails.Succeeded++
                     }
                     catch {
+                        Add-ErrorToTracker -ItemType "TaskDetail" -ItemName $task.title -Exception $_ -Context "Details für Task"
                         Write-PlannerLog "    Fehler beim Setzen der Task-Details: $_" "WARN"
                     }
                 }
             }
         }
         catch {
+            Add-ErrorToTracker -ItemType "Task" -ItemName $task.title -Exception $_ -Context "Plan: $planTitle"
             Write-PlannerLog "  Fehler beim Erstellen von Task '$($task.title)': $_" "ERROR"
         }
     }
 
     Write-Progress -Activity "Importiere Tasks" -Completed
 
-    # Import-Mapping speichern (fÃ¼r Referenz)
+    # Import-Mapping speichern (für Referenz)
     $mappingData = @{
         ImportDate   = (Get-Date).ToString("o")
         OriginalPlan = $planData.Plan.id
@@ -483,11 +958,15 @@ if ($DryRun) {
     Write-Host ""
 }
 
-# PrÃ¼fe Import-Verzeichnis
-if (-not (Test-Path $ImportPath)) {
-    Write-PlannerLog "Import-Verzeichnis nicht gefunden: $ImportPath" "ERROR"
+# Validiere Import-Verzeichnis
+$pathValidationError = $null
+if (-not (Test-SafePath -Path $ImportPath -Mode Import -ErrorMessage ([ref]$pathValidationError))) {
+    Write-Host ""
+    Write-Host "Fehler: $pathValidationError" -ForegroundColor Red
+    Write-Host ""
     exit 1
 }
+Write-PlannerLog "Import-Verzeichnis: $ImportPath"
 
 # Lade Index-Datei
 $indexPath = Join-Path $ImportPath "_ExportIndex.json"
@@ -554,18 +1033,28 @@ Write-Host ""
 
 if ($DryRun) {
     Write-Host "  *** Dies war ein DRY RUN - keine Ã„nderungen wurden vorgenommen ***" -ForegroundColor Magenta
+    Write-Host ""
 }
 else {
+    # Success summary
     $totalTasksImported = ($importResults | Measure-Object -Property TasksCreated -Sum).Sum
     $totalBucketsImported = ($importResults | Measure-Object -Property BucketsCreated -Sum).Sum
-    Write-Host "  PlÃ¤ne importiert:  $($importResults.Count)" -ForegroundColor White
-    Write-Host "  Buckets erstellt:  $totalBucketsImported" -ForegroundColor White
-    Write-Host "  Tasks erstellt:    $totalTasksImported" -ForegroundColor White
+    Write-Host "  Erfolgreich importiert:" -ForegroundColor White
+    Write-Host "    PlÃ¤ne:    $($importResults.Count)" -ForegroundColor Green
+    Write-Host "    Buckets:  $totalBucketsImported" -ForegroundColor Green
+    Write-Host "    Tasks:    $totalTasksImported" -ForegroundColor Green
+    Write-Host ""
+
+    # Cache statistics
+    Write-CacheStatistics
 }
 
-Write-Host ""
-Write-PlannerLog "Import abgeschlossen."
+# Error summary and exit code
+$exitCode = Write-ErrorSummary -OutputPath $ImportPath
 
+Write-PlannerLog "Import abgeschlossen mit Exit-Code: $exitCode"
 Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+
+exit $exitCode
 
 #endregion
