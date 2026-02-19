@@ -270,6 +270,45 @@ PlannerExport_20260209_143000/
 | Zuweisungen fehlen | Benutzer existieren nicht im Tenant → `-SkipAssignments` oder UserMapping |
 | Leerer Export | Prüfe ob der Account Planner-Lizenz hat und Mitglied der Gruppen ist |
 | Kommentare fehlen | Kommentare sind über die API nicht exportierbar (Exchange-basiert) |
+| "Unexpected token" / Parse-Fehler beim Start | Zeilenenden-Problem (LF statt CRLF) – siehe unten |
+
+### Parse-Fehler: "Unexpected token" oder "Missing argument"
+
+Wenn das Script beim Start sofort mit Parse-Fehlern abbricht, obwohl die Datei korrekt aussieht:
+
+```text
+Unexpected token 'User-basiert:' in expression or statement.
+Missing argument in parameter list.
+```
+
+**Ursache:** PowerShell 5.1 auf Windows erwartet CRLF-Zeilenenden (`\r\n`). Wird die Datei
+mit LF-only (`\n`, typisch bei Downloads über Linux/macOS oder bestimmte Browser) gespeichert,
+erkennt PowerShell 5.1 den Block-Kommentar `<# ... #>` nicht korrekt und versucht,
+den Kommentarinhalt als Code zu parsen.
+
+**Lösung:** Datei neu von GitHub herunterladen. Das Repository enthält eine
+[`.gitattributes`](.gitattributes)-Datei, die CRLF-Zeilenenden für alle `.ps1`-Dateien
+erzwingt – ein frischer Download/Clone liefert automatisch die richtige Formatierung:
+
+```powershell
+# Option 1: Neu von GitHub klonen
+git clone https://github.com/walleralexander/planner-export-import.git
+
+# Option 2: Bestehenden Clone aktualisieren und Zeilenenden neu normalisieren
+git pull
+git rm --cached -r .
+git reset --hard HEAD
+```
+
+Alternativ lässt sich die Korrektur auch direkt in PowerShell durchführen:
+
+```powershell
+# Zeilenenden in einer einzelnen Datei auf CRLF setzen
+$file = "Export-PlannerData.ps1"
+$content = [System.IO.File]::ReadAllText($file)
+$content = $content.Replace("`r`n", "`n").Replace("`n", "`r`n")
+[System.IO.File]::WriteAllText($file, $content, [System.Text.UTF8Encoding]::new($true))
+```
 
 ---
 
