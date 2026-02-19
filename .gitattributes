@@ -1,0 +1,9 @@
+# Enforce CRLF line endings for PowerShell scripts on all platforms.
+# PowerShell 5.1 on Windows requires CRLF to correctly parse block comments (<# ... #>).
+*.ps1   text eol=crlf
+*.psm1  text eol=crlf
+*.psd1  text eol=crlf
+
+# Markdown and JSON: LF is fine
+*.md    text eol=lf
+*.json  text eol=lf
