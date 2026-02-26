@@ -53,6 +53,16 @@ Das Export-Skript unterstützt jetzt **zwei verschiedene Modi**:
 - ✅ Detailliertere Log-Meldungen mit Statusangaben
 - ✅ Bessere Behandlung von fehlenden oder ungültigen Gruppen
 
+### Bugfixes (Februar 2026)
+
+- ✅ PowerShell ISE Erkennung: Warnung und automatische WAM-Deaktivierung
+- ✅ Graph API Fix: `$orderby` mit `groupTypes/any()` Filter verursachte HTTP 400 – jetzt client-seitige Sortierung
+- ✅ DateTime-Parsing: `[DateTimeOffset]::Parse()` mit Fehlerbehandlung statt `[DateTime]::Parse()` (Locale-unabhängig)
+- ✅ Export-Zusammenfassung: `[PSCustomObject]` statt Hashtable für korrekte `Measure-Object`-Auswertung
+- ✅ Gruppenauswahl zeigt jetzt auch die Group-ID an (für direkte Verwendung mit `-GroupIds`)
+- ✅ Auth-Fehler verwenden `throw` statt `exit 1` (zuverlässigere Skript-Terminierung in ISE)
+- ✅ NOCOMMENTS-Variante wird synchron zur Hauptdatei gehalten
+
 ---
 
 ## Übersicht
@@ -158,7 +168,7 @@ Benötigte Berechtigungen (Delegated):
 .\Export-PlannerData.ps1 -UseCurrentUser -ExportPath "C:\Backup\Planner"
 ```
 
-> Standardmäßig wird nach `C:\planner-data\PlannerExport_YYYYMMDD_HHMMSS` exportiert.
+> Das Export-Verzeichnis wird automatisch ermittelt: `C:\temp`, `C:\tmp` oder der Dokumente-Ordner des Benutzers (in dieser Reihenfolge). Es kann mit `-ExportPath` überschrieben werden.
 
 ### Import
 
@@ -271,6 +281,7 @@ PlannerExport_20260209_143000/
 | Leerer Export | Prüfe ob der Account Planner-Lizenz hat und Mitglied der Gruppen ist |
 | Kommentare fehlen | Kommentare sind über die API nicht exportierbar (Exchange-basiert) |
 | "Unexpected token" / Parse-Fehler beim Start | Zeilenenden-Problem (LF statt CRLF) – siehe unten |
+| PowerShell ISE: Auth-Fehler / EventSourceException | ISE unterstützt WAM und Device Code nicht zuverlässig – verwende `pwsh.exe` oder `powershell.exe` |
 
 ### Parse-Fehler: "Unexpected token" oder "Missing argument"
 

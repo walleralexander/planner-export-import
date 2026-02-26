@@ -7,38 +7,57 @@
 All core improvements have been successfully implemented across both scripts:
 
 ### ✅ Phase 1: Path Validation & Security (Both Scripts)
+
 - Strong path input validation with `Test-SafePath` function
 - UNC path blocking and path traversal prevention
 - GUID format validation for all ID parameters
 - Safe file operations with proper error handling
 
 ### ✅ Phase 2: Import Script Reliability Improvements
+
 - Defensive null checks in retry logic (prevents crashes on network failures)
 - Comprehensive error tracking system with categorization
 - User resolution caching (90+ seconds saved per plan)
 - Helper functions for error reporting and statistics
 
 ### ✅ Phase 3: Error Tracking Integration
+
 - Plan/bucket/task/task detail tracking fully integrated
 - Success and failure counters for all operations
 - Detailed error context with timestamps
 
 ### ✅ Phase 4: Enhanced Summary & Exit Codes
+
 - Cache statistics display (hit rate, API calls saved)
 - Categorized error summary with JSON export
 - Meaningful exit codes (0/1/2) for automation support
 
 **Files Modified:**
+
 - [Export-PlannerData.ps1](Export-PlannerData.ps1) - Path validation complete
 - [Import-PlannerData.ps1](Import-PlannerData.ps1) - All improvements complete
 
 **Next Steps:** Run verification tests (see Testing section below)
+
+### ✅ Phase 5: Bugfixes (26.02.2026)
+
+Runtime-Fehler behoben, die beim produktiven Einsatz aufgetreten sind:
+
+- [x] **ISE-Kompatibilität:** Erkennung von PowerShell ISE mit Warnung und automatischer WAM-Deaktivierung (`$env:MSAL_ENABLE_WAM = "0"`)
+- [x] **Graph API `$orderby`-Fehler:** `$orderby=displayName` mit `groupTypes/any()` Filter verursachte HTTP 400 (`Request_UnsupportedQuery`) – entfernt, stattdessen client-seitige Sortierung mit `Sort-Object`
+- [x] **DateTime-Parsing:** `[DateTime]::Parse()` schlug bei ISO 8601 Strings fehl (locale-abhängig) – ersetzt durch `[DateTimeOffset]::Parse()` mit try/catch Fallback
+- [x] **Measure-Object-Fehler:** `$exportSummary` war Array von Hashtables – `Measure-Object -Property Tasks` funktioniert nur mit `[PSCustomObject]`
+- [x] **Group-ID Anzeige:** Interaktive Gruppenauswahl zeigt jetzt die Group-ID an (für direkte Verwendung mit `-GroupIds`)
+- [x] **Device Code `-ErrorAction Stop`:** Fehlende Error-Action führte dazu, dass Device Code Fehler nicht korrekt abgefangen wurden
+- [x] **Auth-Fehler Terminierung:** `exit 1` durch `throw` ersetzt – `exit` funktioniert in PowerShell ISE nicht zuverlässig
+- [x] **NOCOMMENTS-Synchronisation:** `Export-PlannerData NOCOMMENTS.ps1` aus aktueller Hauptdatei neu generiert
 
 ---
 
 ## ✅ Completed - Path Validation (Both Scripts)
 
 ### Export-PlannerData.ps1
+
 - [x] Added `Test-SafePath` helper function for path validation
 - [x] Updated parameter block with `[ValidateNotNullOrEmpty()]` and `[ValidateScript()]`
 - [x] Added GUID validation for parameters
@@ -46,6 +65,7 @@ All core improvements have been successfully implemented across both scripts:
 - [x] Enhanced plan title sanitization (length limits, trailing dots/spaces)
 
 ### Import-PlannerData.ps1
+
 - [x] Added `Test-SafePath` helper function for path validation
 - [x] Updated parameter block with validation attributes
 - [x] Added `[ValidatePattern()]` for GUID format validation on `$TargetGroupId`
@@ -53,6 +73,7 @@ All core improvements have been successfully implemented across both scripts:
 - [x] Added GUID validation for `$originalGroupId` from JSON (line 354)
 
 **Security improvements achieved:**
+
 - ✅ Path traversal prevented
 - ✅ UNC paths blocked
 - ✅ Write/read permissions validated
@@ -65,12 +86,14 @@ All core improvements have been successfully implemented across both scripts:
 ## ✅ Completed - Import Script Performance & Reliability
 
 ### Phase 1: Foundation (Completed)
+
 - [x] Added script-level variables `$errorTracker` and `$userResolveCache` (after line 49)
 - [x] Fixed `Invoke-GraphWithRetry` exception handling with defensive null checks (lines 250-360)
 - [x] Added three helper functions: `Add-ErrorToTracker`, `Write-ErrorSummary`, `Write-CacheStatistics`
 - [x] Updated `Resolve-UserId` function with caching implementation (lines 546-649)
 
 **Improvements achieved:**
+
 - ✅ No more crashes on network timeouts/DNS failures
 - ✅ Transient vs permanent error detection
 - ✅ User resolution caching (saves 90+ seconds per plan)
@@ -88,6 +111,7 @@ All core improvements have been successfully implemented across both scripts:
 All error tracking calls have been successfully added at the appropriate points throughout the import process.
 
 **Changes made:**
+
 - [x] Plan creation tracking (Attempted/Succeeded/Failed) - Lines 692-706
 - [x] Bucket creation tracking (Attempted/Succeeded/Failed) - Lines 740-752
 - [x] Task creation tracking (Attempted/Succeeded/Failed) - Lines 779, 843, 917
@@ -101,12 +125,14 @@ All error tracking calls have been successfully added at the appropriate points 
 **Location:** Lines 1027-1058
 
 **Changes made:**
+
 - [x] Added cache statistics display via `Write-CacheStatistics` (Line 1049)
 - [x] Added comprehensive error summary via `Write-ErrorSummary` (Line 1053)
 - [x] Added exit code handling for automation support (Line 1058)
 - [x] Enhanced success summary formatting (Lines 1042-1046)
 
 **Exit codes implemented:**
+
 - `0` = Success (no errors)
 - `1` = Partial failure (some buckets/tasks failed)
 - `2` = Total failure (plan creation failed)
@@ -118,6 +144,7 @@ All error tracking calls have been successfully added at the appropriate points 
 After completing Phase 2 and Phase 3, perform these tests:
 
 ### Test 1: Error Tracking Works
+
 ```powershell
 # Create a test export directory with valid JSON
 .\Import-PlannerData.ps1 -ImportPath ".\test-export" -DryRun
@@ -129,6 +156,7 @@ After completing Phase 2 and Phase 3, perform these tests:
 ```
 
 ### Test 2: Cache Statistics Displayed
+
 ```powershell
 # Import with user assignments
 .\Import-PlannerData.ps1 -ImportPath ".\export-with-assignments" -DryRun
@@ -140,6 +168,7 @@ After completing Phase 2 and Phase 3, perform these tests:
 ```
 
 ### Test 3: Exit Codes Correct
+
 ```powershell
 # Successful import
 .\Import-PlannerData.ps1 -ImportPath ".\good-export" -DryRun
@@ -151,6 +180,7 @@ echo $LASTEXITCODE  # Should be 1 or 2
 ```
 
 ### Test 4: Error Summary Detailed
+
 ```powershell
 # Import that will have errors
 .\Import-PlannerData.ps1 -ImportPath ".\export-with-missing-users"
@@ -167,22 +197,26 @@ echo $LASTEXITCODE  # Should be 1 or 2
 ## 📊 Expected Benefits After Completion
 
 ### Reliability
+
 - Script won't crash on network timeouts or DNS failures
 - Intelligent retry vs abort decisions
 - Proper error categorization
 
 ### Observability
+
 - Clear visibility into what succeeded and what failed
 - Detailed error report with timestamps and context
 - JSON error file for automation/parsing
 
 ### Performance
+
 - 2-3x faster for plans with many user assignments
 - 90+ seconds saved per typical plan (60 tasks × 3 assignees)
 - 95%+ cache hit rate after initial lookups
 - 180+ fewer API calls per plan
 
 ### Automation-Friendly
+
 - Exit codes: 0 (success), 1 (partial), 2 (failure)
 - JSON error reports for CI/CD integration
 - Structured error data for monitoring systems
@@ -220,6 +254,7 @@ For complete code examples and line-by-line instructions, see:
 **`C:\Users\alexander.waller\.claude\plans\silly-herding-aurora.md`**
 
 Sections:
+
 - **Section 5:** "Integrate Error Tracking into Import-PlanFromJson" (lines 970-1025)
 - **Section 6:** "Update Main Program Summary" (lines 1029-1067)
 
@@ -275,6 +310,7 @@ These are medium-priority improvements that can be addressed in future iteration
 Both scripts contain nearly identical `Write-PlannerLog` functions, leading to code duplication and potential drift over time.
 
 **Current Implementation:**
+
 ```powershell
 # Export-PlannerData.ps1 (lines 89-105)
 function Write-PlannerLog {
@@ -302,6 +338,7 @@ function Write-PlannerLog {
 
 **Option A: Shared Module (Recommended for larger projects)**
 Create `PlannerCommon.psm1`:
+
 ```powershell
 # PlannerCommon.psm1
 function Write-PlannerLog {
@@ -338,6 +375,7 @@ Export-ModuleMember -Function Write-PlannerLog
 ```
 
 Then in both scripts:
+
 ```powershell
 # At top of script
 Import-Module "$PSScriptRoot\PlannerCommon.psm1" -Force
@@ -351,6 +389,7 @@ Write-PlannerLog "Message" -Level "INFO" -LogPath "$ImportPath\import.log"
 
 **Option B: Dot-Source Shared File (Simpler for small projects)**
 Create `PlannerLogging.ps1`:
+
 ```powershell
 # PlannerLogging.ps1
 function Write-PlannerLog {
@@ -364,18 +403,21 @@ function Write-PlannerLog {
 ```
 
 Then in both scripts:
+
 ```powershell
 # After parameter block
 . "$PSScriptRoot\PlannerLogging.ps1"
 ```
 
 **Benefits:**
+
 - Single source of truth for logging logic
 - Easier to maintain and enhance
 - No risk of drift between scripts
 - Centralized bug fixes
 
 **Trade-offs:**
+
 - Adds file dependency
 - Slightly more complex deployment
 
@@ -390,6 +432,7 @@ Then in both scripts:
 Script installs the entire `Microsoft.Graph` module (900+ cmdlets) even though only a small subset is needed. This can cause unexpected installs in restricted environments.
 
 **Current Implementation:**
+
 ```powershell
 # Microsoft.Graph Modul prüfen
 if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Planner)) {
@@ -399,12 +442,14 @@ if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Planner)) {
 ```
 
 **Problems:**
+
 1. **Overly broad:** Installs entire suite instead of needed modules
 2. **Side effects:** Silent installation can surprise users
 3. **No version pinning:** Could break with major version updates
 4. **No consent:** `-Force` bypasses prompts
 
 **Improvement:**
+
 ```powershell
 # Microsoft.Graph Modul prüfen - nur benötigte Module
 $requiredModules = @(
@@ -450,12 +495,14 @@ foreach ($module in $requiredModules) {
 ```
 
 **Benefits:**
+
 - Minimal installation footprint (only 4 modules instead of 40+)
 - User consent before installations
 - Clear error messages
 - Version control friendly
 
-**Alternative: Add -SkipModuleCheck Parameter**
+#### Alternative: Add -SkipModuleCheck Parameter
+
 ```powershell
 [Parameter(Mandatory = $false)]
 [switch]$SkipModuleCheck
@@ -474,25 +521,29 @@ For environments where modules are pre-installed centrally.
 Script contains interactive confirmations that block automated/CI runs.
 
 **Current Implementation:**
+
 ```powershell
 # Beispiel aus dem Code (falls vorhanden)
 # Bei bestimmten Aktionen wird Read-Host verwendet
 ```
 
 **Problem Scenarios:**
+
 - CI/CD pipelines hang waiting for input
 - Scheduled tasks fail silently
 - Automated workflows require manual intervention
 
-**Improvement: Add -Force Parameter**
+#### Improvement: Add -Force Parameter
 
 **In parameter block:**
+
 ```powershell
 [Parameter(Mandatory = $false)]
 [switch]$Force,
 ```
 
 **Usage pattern:**
+
 ```powershell
 # Before any Read-Host or interactive prompt:
 if (-not $Force) {
@@ -508,18 +559,21 @@ else {
 ```
 
 **Example locations to check:**
+
 - Group selection prompts (Interactive mode)
 - Overwrite confirmations
 - Destructive operation warnings
 - Module installation prompts (see #2 above)
 
 **Benefits:**
+
 - CI/CD friendly
 - Maintains safety in interactive mode
 - Clear intent (`-Force` flag)
 - No behavior change by default
 
 **Testing:**
+
 ```powershell
 # Interactive (default)
 .\Import-PlannerData.ps1 -ImportPath ".\export"
@@ -539,6 +593,7 @@ else {
 Task details are looked up using `Where-Object` inside the task import loop, creating O(n²) complexity.
 
 **Current Implementation:**
+
 ```powershell
 # Inside task loop (foreach $task in $planData.Tasks)
 foreach ($task in $planData.Tasks) {
@@ -554,13 +609,15 @@ foreach ($task in $planData.Tasks) {
 ```
 
 **Performance Impact:**
+
 - 100 tasks = 10,000 iterations
 - 500 tasks = 250,000 iterations
 - Noticeable slowdown on large plans
 
-**Improvement: Pre-Index by TaskId**
+#### Improvement: Pre-Index by TaskId
 
 **Before the task loop:**
+
 ```powershell
 # Pre-index TaskDetails by taskId for O(1) lookup
 Write-PlannerLog "Indiziere Task-Details für schnellen Zugriff..."
@@ -574,6 +631,7 @@ Write-PlannerLog "  Task-Details indiziert: $($taskDetailsIndex.Count) Einträge
 ```
 
 **In the task loop:**
+
 ```powershell
 foreach ($task in $planData.Tasks) {
     # ... create task ...
@@ -588,24 +646,28 @@ foreach ($task in $planData.Tasks) {
 ```
 
 **Performance Improvement:**
-```
+
+```text
 Before: O(n²) = 100 tasks × 100 lookups = 10,000 operations
 After:  O(n) = 100 tasks × 1 lookup + 100 index = 200 operations
 Speedup: 50x faster for 100 tasks
 ```
 
 **Benefits:**
+
 - Dramatic performance improvement for large plans
 - Scales linearly instead of quadratically
 - Minimal code change
 - No change to functionality
 
 **Memory Trade-off:**
+
 - Small: Hashtable overhead (~100 bytes per entry)
 - For 500 tasks = ~50 KB additional memory
 - Well worth the performance gain
 
 **Testing:**
+
 ```powershell
 # Test with large plan export
 .\Import-PlannerData.ps1 -ImportPath ".\large-plan-500-tasks" -DryRun
@@ -616,6 +678,7 @@ Speedup: 50x faster for 100 tasks
 
 **Implementation Location:**
 Find the task loop in `Import-PlanFromJson` function:
+
 ```powershell
 # Search for:
 foreach ($task in $planData.Tasks)
@@ -636,11 +699,13 @@ $planData.Tasks | ForEach-Object
 
 **Issue:**
 Both scripts are saved with UTF-8 BOM (Byte Order Mark: EF BB BF), which causes encoding display issues in certain environments:
+
 - German umlauts display as mojibake: "ü" → "Ã¼", "ä" → "Ã¤", "ö" → "Ã¶"
 - Comments and log messages become hard to read
 - Affects portability across different editors/systems
 
 **Current State:**
+
 ```bash
 # Check encoding
 head -c 3 Import-PlannerData.ps1 | od -An -tx1
@@ -648,13 +713,15 @@ head -c 3 Import-PlannerData.ps1 | od -An -tx1
 ```
 
 **Examples of Affected Text:**
+
 - Line 685: `"[DRY RUN] WÃ¼rde Plan '$planTitle' erstellen"` (should be "Würde")
 - Line 775: `"Task Ã¼bersprungen"` (should be "übersprungen")
 - Line 910: `"Details gesetzt fÃ¼r"` (should be "für")
 
 **Proposed Solution:**
 
-**Option 1: Convert to UTF-8 without BOM (Recommended)**
+#### Option 1: Convert to UTF-8 without BOM (Recommended)
+
 ```powershell
 # PowerShell script to convert files
 $files = @(
@@ -672,6 +739,7 @@ foreach ($file in $files) {
 
 **Option 2: VSCode/Editor Settings**
 Add to `.vscode/settings.json`:
+
 ```json
 {
   "files.encoding": "utf8",
@@ -683,17 +751,20 @@ Add to `.vscode/settings.json`:
 ```
 
 **Benefits:**
+
 - ✅ Fixes mojibake display issues
 - ✅ Better portability across systems
 - ✅ Consistent with PowerShell 7+ defaults
 - ✅ Works correctly in Git, VSCode, PowerShell ISE
 
 **Compatibility Note:**
+
 - PowerShell 5.1+ supports UTF-8 without BOM
 - No functionality changes, purely encoding fix
 - Existing scripts will continue to work
 
 **Testing:**
+
 ```powershell
 # After conversion, verify
 Get-Content .\Import-PlannerData.ps1 -First 50 | Select-String "für|über|würde"
@@ -731,6 +802,7 @@ The `Write-PlannerLog` function is used inconsistently across both scripts:
 **Current Examples:**
 
 Import-PlannerData.ps1:
+
 ```powershell
 Write-PlannerLog "Warnung: StatusCode nicht verfügbar: $($_.Exception.Message)" "WARN"
 Write-PlannerLog "Benutzer konnte nicht zugewiesen werden: $userName" "WARN"
@@ -743,6 +815,7 @@ Write-PlannerLog "    Details gesetzt für: $($task.title)" "OK"
 **Proposed Standardization:**
 
 **1. Define clear prefix rules:**
+
 ```powershell
 # ERROR level: Always use "Fehler:" prefix
 Write-PlannerLog "Fehler: Plan konnte nicht erstellt werden: $_" "ERROR"
@@ -756,6 +829,7 @@ Write-PlannerLog "Verbunden als: $($context.Account)" "OK"
 ```
 
 **2. Standardize indentation:**
+
 ```powershell
 # Use consistent 2-space indentation for hierarchy
 Write-PlannerLog "=== Plan: $planTitle ===" "OK"          # Level 0: Section header
@@ -765,10 +839,12 @@ Write-PlannerLog "      Details gesetzt" "OK"             # Level 3: Details
 ```
 
 **3. Normalize terminology (Optional):**
+
 - Consistently use German terms: "Gruppe" (not "Group"), "Plan" (already German)
 - Or create glossary in comments
 
 **Benefits:**
+
 - ✅ Easier log parsing with consistent patterns
 - ✅ Better readability for users
 - ✅ Simpler regex patterns for log analysis
@@ -776,11 +852,13 @@ Write-PlannerLog "      Details gesetzt" "OK"             # Level 3: Details
 
 **Implementation Approach:**
 
-**Option 1: Gradual normalization (Low effort)**
+#### Option 1: Gradual normalization (Low effort)
+
 - Fix as you go when editing related code
 - Add style guide to CLAUDE.md or README
 
-**Option 2: Systematic refactor (Medium effort - 30-45 minutes)**
+#### Option 2: Systematic refactor (Medium effort - 30-45 minutes)
+
 ```powershell
 # Create a script to help identify patterns
 Get-Content Import-PlannerData.ps1 | Select-String 'Write-PlannerLog' |
@@ -790,6 +868,7 @@ Get-Content Import-PlannerData.ps1 | Select-String 'Write-PlannerLog' |
 ```
 
 **Style Guide to Add:**
+
 ```markdown
 ## Logging Style Guide
 
@@ -813,6 +892,7 @@ Get-Content Import-PlannerData.ps1 | Select-String 'Write-PlannerLog' |
 ```
 
 **Testing:**
+
 ```powershell
 # After standardization, verify patterns
 Select-String 'Write-PlannerLog.*"ERROR"' .\Import-PlannerData.ps1 |
@@ -828,7 +908,7 @@ Select-String 'Write-PlannerLog.*"ERROR"' .\Import-PlannerData.ps1 |
 ## 📊 Priority Summary
 
 | Issue | Priority | Impact | Effort | Value | Status |
-|-------|----------|--------|--------|-------|--------|
+| ------- | ---------- | -------- | -------- | ------- | --------- |
 | Path Validation | **High** | High (security) | Low | ⭐⭐⭐⭐⭐ | ✅ Done |
 | Error Tracking Integration | **High** | High (visibility) | Low | ⭐⭐⭐⭐⭐ | ✅ Done |
 | Main Program Summary | **High** | High (UX) | Low | ⭐⭐⭐⭐⭐ | ✅ Done |
@@ -844,11 +924,13 @@ Select-String 'Write-PlannerLog.*"ERROR"' .\Import-PlannerData.ps1 |
 
 ## 🎯 Recommended Implementation Order
 
-**Completed (4 of 10):**
+**Completed (5 of 10):**
+
 1. ✅ Path validation & security improvements
 2. ✅ Error tracking integration
 3. ✅ Main program summary & exit codes
 4. ✅ User resolution caching
+5. ✅ Bugfixes: ISE-Kompatibilität, Graph API, DateTime-Parsing, Measure-Object, NOCOMMENTS-Sync
 
 **Recommended Next Steps:**
 
@@ -861,10 +943,12 @@ Select-String 'Write-PlannerLog.*"ERROR"' .\Import-PlannerData.ps1 |
 
 ---
 
-**Updated Status:** 4 of 10 improvements complete (40%)
+**Updated Status:** 5 of 10 improvements complete (50%)
 
 **Breakdown:**
+
 - **Core features:** ✅ 100% complete (path validation, error tracking, caching, summaries)
+- **Bugfixes:** ✅ 100% complete (ISE, Graph API, DateTime, Measure-Object, NOCOMMENTS)
 - **Performance improvements:** 50% complete (caching ✅, task detail indexing 📝)
 - **Code quality improvements:** 0% complete (6 items remaining)
 
