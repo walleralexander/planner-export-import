@@ -12,7 +12,10 @@
     2. Gruppen-basiert: Pläne aus spezifischen M365-Gruppen (-GroupNames/-GroupIds/-Interactive)
 
 .PARAMETER ExportPath
-    Zielpfad für den Export (Standard: C:\planner-data\PlannerExport_YYYYMMDD_HHMMSS)
+    Zielpfad für den Export. Standard-Verzeichnis wird automatisch ermittelt:
+    1. C:\temp (falls vorhanden)
+    2. C:\tmp (falls vorhanden)
+    3. Dokumente-Ordner des aktuellen Benutzers
 
 .PARAMETER GroupNames
     Namen der M365-Gruppen/SharePoint-Seiten, aus denen Pläne exportiert werden sollen.
@@ -66,8 +69,7 @@
 
 param(
     [Parameter(Mandatory = $false)]
-    [ValidateNotNullOrEmpty()]
-    [string]$ExportPath = "C:\planner-data\PlannerExport_$(Get-Date -Format 'yyyyMMdd_HHmmss')",
+    [string]$ExportPath,
 
     [Parameter(Mandatory = $false)]
     [ValidateNotNullOrEmpty()]
@@ -86,6 +88,13 @@ param(
     [Parameter(Mandatory = $false)]
     [switch]$UseCurrentUser
 )
+
+# ISE-Erkennung: PowerShell ISE unterstützt keine modernen Authentifizierungsflows (WAM/DeviceCode)
+if ($host.Name -eq 'Windows PowerShell ISE Host') {
+    Write-Warning "PowerShell ISE wird nicht vollständig unterstützt. Bitte verwenden Sie PowerShell 7 (pwsh.exe) oder Windows PowerShell (powershell.exe) statt ISE."
+    Write-Warning "Authentifizierungsprobleme sind in ISE zu erwarten. WAM wird deaktiviert."
+    $env:MSAL_ENABLE_WAM = "0"
+}
 
 #region Funktionen
 
@@ -165,7 +174,7 @@ function Test-SafePath {
                 Remove-Item $testFile -Force -ErrorAction SilentlyContinue
             }
             catch {
-                if ($ErrorMessage) { $ErrorMessage.Value = "Keine Schreibrechte für Verzeichnis: $normalizedPath" }
+                if ($ErrorMessage) { $ErrorMessage.Value = "Keine Schreibrechte fuer das Verzeichnis '$normalizedPath'. Der aktuelle Benutzer ($env:USERNAME) darf dort nicht schreiben." }
                 return $false
             }
         }
@@ -201,7 +210,7 @@ function Test-SafePath {
                 Remove-Item $testFile -Force -ErrorAction SilentlyContinue
             }
             catch {
-                if ($ErrorMessage) { $ErrorMessage.Value = "Keine Schreibrechte für übergeordnetes Verzeichnis: $testParentPath" }
+                if ($ErrorMessage) { $ErrorMessage.Value = "Keine Schreibrechte fuer das uebergeordnete Verzeichnis '$testParentPath'. Der aktuelle Benutzer ($env:USERNAME) darf dort keine Ordner erstellen." }
                 return $false
             }
         }
@@ -245,7 +254,7 @@ function Connect-ToGraph {
             catch {
                 # Fallback auf Device Code Flow wenn Browser-Auth fehlschlägt
                 Write-PlannerLog "Browser-Authentifizierung fehlgeschlagen, verwende Device Code Flow..." "WARN"
-                Connect-MgGraph -Scopes "Group.Read.All", "Tasks.Read", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All" -UseDeviceCode -NoWelcome
+                Connect-MgGraph -Scopes "Group.Read.All", "Tasks.Read", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All" -UseDeviceCode -NoWelcome -ErrorAction Stop
             }
         }
         $context = Get-MgContext
@@ -266,7 +275,7 @@ function Get-AllM365Groups {
     $groups = @()
 
     try {
-        $uri = "https://graph.microsoft.com/v1.0/groups?`$filter=groupTypes/any(g:g eq 'Unified')&`$select=id,displayName,mail&`$orderby=displayName"
+        $uri = "https://graph.microsoft.com/v1.0/groups?`$filter=groupTypes/any(g:g eq 'Unified')&`$select=id,displayName,mail"
 
         do {
             $response = Invoke-MgGraphRequest -Method GET -Uri $uri -OutputType PSObject
@@ -276,6 +285,7 @@ function Get-AllM365Groups {
             $uri = $response.'@odata.nextLink'
         } while ($uri)
 
+        $groups = $groups | Sort-Object displayName
         Write-PlannerLog "$($groups.Count) M365-Gruppen gefunden"
         return $groups
     }
@@ -345,6 +355,7 @@ function Show-GroupSelectionMenu {
 
     for ($i = 0; $i -lt $Groups.Count; $i++) {
         Write-Host "  [$($i+1)] $($Groups[$i].displayName)" -ForegroundColor White
+        Write-Host "      ID: $($Groups[$i].id)" -ForegroundColor DarkGray
         if ($Groups[$i].mail) {
             Write-Host "      $($Groups[$i].mail)" -ForegroundColor Gray
         }
@@ -679,13 +690,21 @@ function Export-ReadableSummary {
 
                 # Fälligkeitsdatum
                 if ($task.dueDateTime) {
-                    $dueDate = [DateTime]::Parse($task.dueDateTime).ToString("dd.MM.yyyy")
+                    try {
+                        $dueDate = ([DateTimeOffset]::Parse($task.dueDateTime)).DateTime.ToString("dd.MM.yyyy")
+                    } catch {
+                        $dueDate = $task.dueDateTime
+                    }
                     [void]$sb.AppendLine("    Fällig am: $dueDate")
                 }
 
                 # Startdatum
                 if ($task.startDateTime) {
-                    $startDate = [DateTime]::Parse($task.startDateTime).ToString("dd.MM.yyyy")
+                    try {
+                        $startDate = ([DateTimeOffset]::Parse($task.startDateTime)).DateTime.ToString("dd.MM.yyyy")
+                    } catch {
+                        $startDate = $task.startDateTime
+                    }
                     [void]$sb.AppendLine("    Start: $startDate")
                 }
 
@@ -799,15 +818,40 @@ Write-Host "  by Alexander Waller" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 
+# Standard-ExportPath ermitteln, falls nicht angegeben
+$isAutoDetectedPath = $false
+if ([string]::IsNullOrWhiteSpace($ExportPath)) {
+    $exportTimestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+    $exportBaseDir = $null
+
+    # Fallback-Reihenfolge: C:\temp -> C:\tmp -> Benutzerprofil\Documents
+    if (Test-Path "C:\temp" -PathType Container) {
+        $exportBaseDir = "C:\temp"
+    }
+    elseif (Test-Path "C:\tmp" -PathType Container) {
+        $exportBaseDir = "C:\tmp"
+    }
+    else {
+        $exportBaseDir = [System.Environment]::GetFolderPath('MyDocuments')
+    }
+
+    $ExportPath = Join-Path $exportBaseDir "PlannerExport_$exportTimestamp"
+    $isAutoDetectedPath = $true
+    Write-Host "  Export-Verzeichnis: $ExportPath" -ForegroundColor Gray
+    Write-Host ""
+}
+
 # Validiere Export-Pfad
 $pathValidationError = $null
-$isDefaultPattern = $ExportPath -match '^[A-Z]:\\planner-data\\PlannerExport_\d{8}_\d{6}$'
 
-if ($isDefaultPattern) {
-    # Für Standardpfad: Erlaube Erstellen des übergeordneten Verzeichnisses
+if ($isAutoDetectedPath) {
+    # Für automatisch ermittelten Pfad: Erlaube Erstellen des Export-Unterverzeichnisses
     if (-not (Test-SafePath -Path $ExportPath -Mode Export -AllowCreate -ErrorMessage ([ref]$pathValidationError))) {
         Write-Host ""
-        Write-Host "Fehler: $pathValidationError" -ForegroundColor Red
+        Write-Host "FEHLER beim Export-Pfad: $pathValidationError" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Loesung: Geben Sie einen Pfad an, auf den Sie Schreibrechte haben:" -ForegroundColor Yellow
+        Write-Host "  .\Export-PlannerData.ps1 -ExportPath `"C:\Mein\Ordner`"" -ForegroundColor White
         Write-Host ""
         exit 1
     }
@@ -816,7 +860,14 @@ else {
     # Für benutzerdefinierte Pfade: Strikte Validierung
     if (-not (Test-SafePath -Path $ExportPath -Mode Export -ErrorMessage ([ref]$pathValidationError))) {
         Write-Host ""
-        Write-Host "Fehler: $pathValidationError" -ForegroundColor Red
+        Write-Host "FEHLER beim Export-Pfad: $pathValidationError" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Bitte pruefen Sie:" -ForegroundColor Yellow
+        Write-Host "  - Hat Ihr Benutzer Schreibrechte auf dieses Verzeichnis?" -ForegroundColor Yellow
+        Write-Host "  - Existiert das uebergeordnete Verzeichnis?" -ForegroundColor Yellow
+        Write-Host "  - Ist der Pfad korrekt geschrieben?" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Beispiel: .\Export-PlannerData.ps1 -ExportPath `"$([System.Environment]::GetFolderPath('MyDocuments'))\PlannerExport`"" -ForegroundColor White
         Write-Host ""
         exit 1
     }
@@ -848,7 +899,7 @@ Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
 # Verbinden
 if (-not (Connect-ToGraph)) {
     Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph möglich." "ERROR"
-    exit 1
+    throw "Abbruch: Keine Verbindung zu Microsoft Graph möglich."
 }
 
 # Pläne laden
@@ -979,7 +1030,7 @@ foreach ($plan in $plans) {
     Write-Host ""
     Write-PlannerLog "=== Exportiere Plan: $($plan.title) ===" "OK"
     $planData = Export-PlanDetails -Plan $plan -PlanExportPath $ExportPath
-    $exportSummary += @{
+    $exportSummary += [PSCustomObject]@{
         PlanTitle  = $plan.title
         GroupName  = $plan.groupDisplayName
         Buckets    = $planData.Buckets.Count
