@@ -173,4 +173,5 @@ if ($missing.Count -gt 0) {
     Write-Host "Alle erforderlichen Berechtigungen sind vorhanden!" -ForegroundColor Green
 }
 
-Write-Host ""
+Write-Host "Ende der Pruefung." -ForegroundColor Cyan
+
