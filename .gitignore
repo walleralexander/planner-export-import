@@ -19,9 +19,10 @@ README.pdf
 # Temporary conversion scripts (can be regenerated)
 convert-to-pdf.ps1
 
-# Claude Code local settings (user-specific)
+# Claude Code (user-specific / temporary)
 .claude/settings.local.json
 .claude/memory/
+.claude/worktrees/
 
 # PowerShell specific
 *.ps1xml
