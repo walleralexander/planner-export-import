@@ -477,21 +477,82 @@ function ConvertTo-IsoDate {
     <#
     .SYNOPSIS
         Konvertiert ein Datum in ISO 8601 Format für die Graph API.
-        Unterstützt /Date(ms)/-Format (OData v3), DateTime-Objekte und ISO-Strings.
+        Unterstützt DateTime-Objekte (ConvertFrom-Json konvertiert /Date(ms)/ automatisch),
+        /Date(ms)/-Strings (OData v3) und ISO-Strings.
     #>
     param([object]$Value)
     if (-not $Value) { return $null }
+    # ConvertFrom-Json wandelt /Date(ms)/ bereits in DateTime/DateTimeOffset um
+    if ($Value -is [datetime]) {
+        return $Value.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    }
+    if ($Value -is [datetimeoffset]) {
+        return $Value.UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    }
     $str = $Value.ToString().Trim()
-    # OData v3: /Date(1769554800000)/ or /Date(1769554800000+0000)/
+    # OData v3 Fallback (falls doch als String): /Date(1769554800000)/
     if ($str -match '^/Date\((\d+)') {
         $ms = [long]$Matches[1]
         return [DateTimeOffset]::FromUnixTimeMilliseconds($ms).UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
-    # Bereits ein DateTime-Objekt oder ISO-String
+    # ISO-String Fallback
     try {
-        return ([datetime]$str).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        return ([datetime]::Parse($str, [System.Globalization.CultureInfo]::InvariantCulture)).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
     }
     catch {
+        return $null
+    }
+}
+
+function Get-OrCreateWarningCategory {
+    <#
+    .SYNOPSIS
+        Findet einen freien Kategorie-Slot im Plan und legt eine "⚠ Import-Fehler"-Kategorie an.
+        Gibt den Kategorie-Schlüssel zurück (z.B. "category25"), oder $null bei Fehler.
+    #>
+    param(
+        [string]$PlanId,
+        [object]$ExistingCategories
+    )
+    # Bereits verwendete Slots bestimmen
+    $usedSlots = @{}
+    if ($ExistingCategories) {
+        $ExistingCategories.PSObject.Properties | Where-Object { $_.Value } | ForEach-Object {
+            $usedSlots[$_.Name] = $true
+        }
+    }
+
+    # Freien Slot von hinten suchen (category25..category1)
+    $freeSlot = $null
+    for ($i = 25; $i -ge 1; $i--) {
+        $key = "category$i"
+        if (-not $usedSlots.ContainsKey($key)) {
+            $freeSlot = $key
+            break
+        }
+    }
+
+    if (-not $freeSlot) {
+        Write-PlannerLog "  Kein freier Kategorie-Slot für Warn-Label verfügbar (alle 25 belegt)" "WARN"
+        return $null
+    }
+
+    try {
+        $planDetails = Invoke-GraphWithRetry -Method GET -Uri "https://graph.microsoft.com/v1.0/planner/plans/$PlanId/details"
+        $patchParams = @{
+            Method      = "PATCH"
+            Uri         = "https://graph.microsoft.com/v1.0/planner/plans/$PlanId/details"
+            Body        = (@{ categoryDescriptions = @{ $freeSlot = "⚠ Import-Fehler" } } | ConvertTo-Json -Depth 5)
+            ContentType = "application/json"
+            Headers     = @{ "If-Match" = $planDetails.'@odata.etag' }
+            OutputType  = "PSObject"
+        }
+        Invoke-MgGraphRequest @patchParams
+        Write-PlannerLog "  Warn-Label erstellt in Slot '$freeSlot'" "OK"
+        return $freeSlot
+    }
+    catch {
+        Write-PlannerLog "  Fehler beim Erstellen des Warn-Labels: $_" "WARN"
         return $null
     }
 }
@@ -1127,6 +1188,8 @@ function Import-PlanFromJson {
     $taskMapping = @{}
     $taskCounter = 0
     $totalTasks = $planData.Tasks.Count
+    $warningCategoryKey = $null      # wird bei erstem Problem lazy initialisiert
+    $warningCategoryResolved = $false
 
     # UserMap als Hashtable aufbereiten
     $userMap = @{}
@@ -1138,6 +1201,7 @@ function Import-PlanFromJson {
 
     foreach ($task in $planData.Tasks) {
         $taskCounter++
+        $taskHasIssues = $false
         Write-Progress -Activity "Importiere Tasks für '$planTitle'" -Status "Task $taskCounter von ${totalTasks}: $($task.title)" -PercentComplete (($taskCounter / [Math]::Max(1, $totalTasks)) * 100)
 
         # Abgeschlossene Tasks überspringen wenn gewünscht
@@ -1166,14 +1230,16 @@ function Import-PlanFromJson {
             $taskBody["bucketId"] = $newBucketId
         }
 
-        if ($task.dueDateTime) {
-            $converted = ConvertTo-IsoDate $task.dueDateTime
-            if ($converted) { $taskBody["dueDateTime"] = $converted }
-        }
+        $convertedDue   = if ($task.dueDateTime)   { ConvertTo-IsoDate $task.dueDateTime }   else { $null }
+        $convertedStart = if ($task.startDateTime) { ConvertTo-IsoDate $task.startDateTime } else { $null }
 
-        if ($task.startDateTime) {
-            $converted = ConvertTo-IsoDate $task.startDateTime
-            if ($converted) { $taskBody["startDateTime"] = $converted }
+        # Daten nur setzen wenn gültig: DueDate darf nicht vor StartDate liegen
+        if ($convertedStart -and $convertedDue -and ([datetime]$convertedDue -lt [datetime]$convertedStart)) {
+            Write-PlannerLog "  Warnung: DueDate ($convertedDue) liegt vor StartDate ($convertedStart) bei Task '$($task.title)' - Daten werden ignoriert" "WARN"
+            $taskHasIssues = $true
+        } else {
+            if ($convertedDue)   { $taskBody["dueDateTime"]   = $convertedDue }
+            if ($convertedStart) { $taskBody["startDateTime"] = $convertedStart }
         }
 
         # Labels/Kategorien
@@ -1201,6 +1267,7 @@ function Import-PlanFromJson {
                 else {
                     $userName = if ($userMap[$_.Name]) { $userMap[$_.Name].DisplayName } else { $_.Name }
                     Write-PlannerLog "    Benutzer konnte nicht zugewiesen werden: $userName" "WARN"
+                    $taskHasIssues = $true
                 }
             }
             if ($assignments.Count -gt 0) {
@@ -1284,6 +1351,34 @@ function Import-PlanFromJson {
                     catch {
                         Add-ErrorToTracker -ItemType "TaskDetail" -ItemName $task.title -Exception $_ -Context "Details für Task"
                         Write-PlannerLog "    Fehler beim Setzen der Task-Details: $_" "WARN"
+                        $taskHasIssues = $true
+                    }
+                }
+            }
+
+            # Warn-Label setzen wenn es Probleme gab
+            if ($taskHasIssues) {
+                # Warn-Kategorie lazy initialisieren (nur beim ersten Problem)
+                if (-not $warningCategoryResolved) {
+                    $warningCategoryResolved = $true
+                    $warningCategoryKey = Get-OrCreateWarningCategory -PlanId $newPlan.id -ExistingCategories $planData.Categories
+                }
+                if ($warningCategoryKey) {
+                    try {
+                        $taskForEtag = Invoke-GraphWithRetry -Method GET -Uri "https://graph.microsoft.com/v1.0/planner/tasks/$($newTask.id)"
+                        $warnParams = @{
+                            Method      = "PATCH"
+                            Uri         = "https://graph.microsoft.com/v1.0/planner/tasks/$($newTask.id)"
+                            Body        = (@{ appliedCategories = @{ $warningCategoryKey = $true } } | ConvertTo-Json -Depth 5)
+                            ContentType = "application/json"
+                            Headers     = @{ "If-Match" = $taskForEtag.'@odata.etag' }
+                            OutputType  = "PSObject"
+                        }
+                        Invoke-MgGraphRequest @warnParams
+                        Write-PlannerLog "    Warn-Label gesetzt für: $($task.title)" "WARN"
+                    }
+                    catch {
+                        Write-PlannerLog "    Fehler beim Setzen des Warn-Labels: $_" "WARN"
                     }
                 }
             }
