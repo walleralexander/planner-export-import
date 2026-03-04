@@ -273,7 +273,6 @@ function Connect-ToGraph {
         }
 
         # TenantId + Account: Parameter > Config-Datei
-        # Gespeichertes Konto immer laden (für LoginHint bei Silent-Auth)
         $cfg = Get-PlannerAuthConfig
         $savedAccount = if ($cfg) { $cfg.Account } else { $null }
 
@@ -292,7 +291,6 @@ function Connect-ToGraph {
         if ($tid) {
             try {
                 $silentArgs = @{ TenantId = $tid; Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop'; WarningAction = 'SilentlyContinue' }
-                if ($savedAccount) { $silentArgs['LoginHint'] = $savedAccount }
                 Connect-MgGraph @silentArgs
                 $connected = $true
             } catch {
@@ -331,12 +329,10 @@ function Connect-ToGraph {
                 if ($authChoice -eq 'B') {
                     $connectArgs = @{ Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop' }
                     if ($tid) { $connectArgs['TenantId'] = $tid }
-                    if ($savedAccount) { $connectArgs['LoginHint'] = $savedAccount }
                     Connect-MgGraph @connectArgs
                 } else {
                     $connectArgs = @{ Scopes = $scopes; UseDeviceCode = $true; NoWelcome = $true; ErrorAction = 'Stop' }
                     if ($tid) { $connectArgs['TenantId'] = $tid }
-                    if ($savedAccount) { $connectArgs['LoginHint'] = $savedAccount }
                     Connect-MgGraph @connectArgs
                 }
                 $connected = $true
