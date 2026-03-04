@@ -35,6 +35,11 @@
     Exportiert alle Pläne des aktuellen Benutzers aus allen seinen M365-Gruppen.
     Dies ist eine Alternative zu -GroupIds, -GroupNames oder -Interactive.
 
+.PARAMETER TenantId
+    Azure AD Tenant-ID für die Authentifizierung. Wird beim ersten erfolgreichen
+    Login automatisch in ~/.planner-auth.json gespeichert und bei späteren
+    Ausführungen für lautlose Anmeldung (ohne Browser) wiederverwendet.
+
 .EXAMPLE
     .\Export-PlannerData.ps1 -UseCurrentUser
     Exportiert alle Pläne des angemeldeten Benutzers aus allen seinen Gruppen
@@ -86,7 +91,10 @@ param(
     [switch]$Interactive,
 
     [Parameter(Mandatory = $false)]
-    [switch]$UseCurrentUser
+    [switch]$UseCurrentUser,
+
+    [Parameter(Mandatory = $false)]
+    [string]$TenantId
 )
 
 # ISE-Erkennung: PowerShell ISE unterstützt keine modernen Authentifizierungsflows (WAM/DeviceCode)
@@ -242,29 +250,129 @@ function Test-SafePath {
 }
 
 function Connect-ToGraph {
+    $script:AuthConfigPath = Join-Path $env:USERPROFILE '.planner-auth.json'
+
+    # Auth-Config laden/speichern
+    function Get-PlannerAuthConfig {
+        if (Test-Path $script:AuthConfigPath) {
+            try { return Get-Content $script:AuthConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json }
+            catch { return $null }
+        }
+        return $null
+    }
+    function Save-PlannerAuthConfig($tid, $account) {
+        try {
+            @{ TenantId = $tid; Account = $account; SavedAt = (Get-Date -Format 'o') } |
+                ConvertTo-Json | Out-File $script:AuthConfigPath -Encoding UTF8 -Force
+        } catch { }
+    }
+
     Write-PlannerLog "Verbinde mit Microsoft Graph..."
+    $scopes = "Group.Read.All", "Tasks.Read", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All"
+
     try {
-        # Prüfe ob bereits verbunden
+        # Prüfe ob bereits verbunden (gleiche Session)
         $context = Get-MgContext
-        if ($null -eq $context) {
+        if ($null -ne $context -and -not [string]::IsNullOrEmpty($context.Account)) {
+            Write-PlannerLog "Bereits verbunden als: $($context.Account)" "OK"
+            return $true
+        }
+
+        # TenantId: Parameter > Config-Datei
+        $tid = if (-not [string]::IsNullOrEmpty($TenantId)) {
+            $TenantId
+        } else {
+            $cfg = Get-PlannerAuthConfig
+            if ($cfg -and $cfg.TenantId) {
+                Write-PlannerLog "Verwende gespeicherte TenantId ($($cfg.TenantId)) für automatische Anmeldung..."
+                $cfg.TenantId
+            } else { $null }
+        }
+
+        $connected = $false
+
+        # 1. Versuch: Silent-Auth via MSAL-Cache (nur wenn TenantId bekannt)
+        if ($tid) {
             try {
-                # Versuche zuerst interaktive Anmeldung
-                Connect-MgGraph -Scopes "Group.Read.All", "Tasks.Read", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All" -NoWelcome -ErrorAction Stop
-            }
-            catch {
-                # Fallback auf Device Code Flow wenn Browser-Auth fehlschlägt
-                Write-PlannerLog "Browser-Authentifizierung fehlgeschlagen, verwende Device Code Flow..." "WARN"
-                Connect-MgGraph -Scopes "Group.Read.All", "Tasks.Read", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All" -UseDeviceCode -NoWelcome -ErrorAction Stop
+                Connect-MgGraph -TenantId $tid -Scopes $scopes -NoWelcome -ErrorAction Stop
+                $connected = $true
+            } catch {
+                $errMsg = $_.Exception.Message
+                if ($_.Exception.InnerException) { $errMsg += ' ' + $_.Exception.InnerException.Message }
+                $isCancelled = $errMsg -match 'authentication_canceled|user_cancelled|UserCanceled' `
+                    -or $errMsg -match 'The user did not complete the authentication' `
+                    -or $errMsg -match 'Authentication was canceled by the user' `
+                    -or $errMsg -match 'abgebrochen|aborted|cancelled|canceled' `
+                    -or $_ -is [System.OperationCanceledException] `
+                    -or $_.Exception.InnerException -is [System.OperationCanceledException]
+                if ($isCancelled) {
+                    Write-Host ""
+                    Write-Host "Anmeldung wurde abgebrochen. Script wird beendet." -ForegroundColor Red
+                    Write-Host ""
+                    exit 1
+                }
+                Write-PlannerLog "Silent-Auth fehlgeschlagen, versuche interaktive Anmeldung..." "WARN"
             }
         }
+
+        # 2. Versuch: Interaktive Browser-Anmeldung
+        if (-not $connected) {
+            try {
+                $connectArgs = @{ Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop' }
+                if ($tid) { $connectArgs['TenantId'] = $tid }
+                Connect-MgGraph @connectArgs
+                $connected = $true
+            } catch {
+                $errMsg = $_.Exception.Message
+                if ($_.Exception.InnerException) { $errMsg += ' ' + $_.Exception.InnerException.Message }
+                $isCancelled = $errMsg -match 'authentication_canceled|user_cancelled|UserCanceled' `
+                    -or $errMsg -match 'The user did not complete the authentication' `
+                    -or $errMsg -match 'Authentication was canceled by the user' `
+                    -or $errMsg -match 'abgebrochen|aborted|cancelled|canceled' `
+                    -or $_ -is [System.OperationCanceledException] `
+                    -or $_.Exception.InnerException -is [System.OperationCanceledException]
+                if ($isCancelled) {
+                    Write-Host ""
+                    Write-Host "Anmeldung wurde abgebrochen. Script wird beendet." -ForegroundColor Red
+                    Write-Host ""
+                    exit 1
+                }
+                # 3. Fallback: Device Code Flow
+                Write-PlannerLog "Browser-Authentifizierung fehlgeschlagen, verwende Device Code Flow..." "WARN"
+                $connectArgs2 = @{ Scopes = $scopes; UseDeviceCode = $true; NoWelcome = $true; ErrorAction = 'Stop' }
+                if ($tid) { $connectArgs2['TenantId'] = $tid }
+                Connect-MgGraph @connectArgs2
+                $connected = $true
+            }
+        }
+
         $context = Get-MgContext
         if ($null -eq $context -or [string]::IsNullOrEmpty($context.Account)) {
             throw "Keine gültige Verbindung hergestellt"
         }
+
+        # TenantId + Account für nächste Ausführung speichern
+        $resolvedTid = if ($tid) { $tid } else { $context.TenantId }
+        Save-PlannerAuthConfig -tid $resolvedTid -account $context.Account
+
         Write-PlannerLog "Verbunden als: $($context.Account)" "OK"
         return $true
     }
     catch {
+        $errMsg = $_.Exception.Message
+        if ($_.Exception.InnerException) { $errMsg += ' ' + $_.Exception.InnerException.Message }
+        $isCancelled = $errMsg -match 'authentication_canceled|user_cancelled|UserCanceled' `
+            -or $errMsg -match 'The user did not complete the authentication' `
+            -or $errMsg -match 'Authentication was canceled by the user' `
+            -or $errMsg -match 'abgebrochen|aborted|cancelled|canceled' `
+            -or $_ -is [System.OperationCanceledException] `
+            -or $_.Exception.InnerException -is [System.OperationCanceledException]
+        if ($isCancelled) {
+            Write-Host ""
+            Write-Host "Anmeldung wurde abgebrochen. Script wird beendet." -ForegroundColor Red
+            Write-Host ""
+            exit 1
+        }
         Write-PlannerLog "Fehler bei der Verbindung zu Microsoft Graph: $_" "ERROR"
         return $false
     }

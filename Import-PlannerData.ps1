@@ -7,6 +7,66 @@
     Buckets, Tasks (inkl. Checklisten, Beschreibungen, Zuweisungen und Labels)
     in den angegebenen Microsoft 365 Gruppen.
 
+.PARAMETER ImportPath
+    Pfad zum Export-Verzeichnis (enthält die JSON-Dateien und _ExportIndex.json).
+    Wird kein Pfad angegeben, werden Standard-Speicherorte automatisch durchsucht.
+
+.PARAMETER TargetGroupId
+    Gruppen-ID der Ziel-M365-Gruppe. Wird diese angegeben, werden alle Pläne
+    in diese Gruppe importiert (statt in die Original-Gruppen aus dem Export).
+
+.PARAMETER UserMapping
+    Hashtable zur Abbildung alter Benutzer-IDs auf neue (für Tenant-Migrationen).
+    Beispiel: @{ "alte-id" = "neue-id" }
+
+.PARAMETER SkipAssignments
+    Benutzerzuweisungen werden beim Import nicht wiederhergestellt.
+
+.PARAMETER SkipCompletedTasks
+    Abgeschlossene Tasks (percentComplete = 100) werden nicht importiert.
+
+.PARAMETER DryRun
+    Vorschau-Modus: Es werden keine Änderungen vorgenommen.
+    Ohne -ImportPath: Listet alle gefundenen Exporte mit Gruppen und Tasks auf.
+    Mit -ImportPath: Validiert den Export und zeigt was importiert werden würde.
+
+.PARAMETER ListGroups
+    Listet alle M365-Gruppen im Tenant mit ID und E-Mail auf und beendet das Script.
+    Nützlich um die richtige -TargetGroupId zu ermitteln.
+
+.PARAMETER TenantId
+    Azure AD Tenant-ID für die Authentifizierung. Wird beim ersten erfolgreichen
+    Login automatisch in ~/.planner-auth.json gespeichert und bei späteren
+    Ausführungen für lautlose Anmeldung (ohne Browser) wiederverwendet.
+
+.PARAMETER ThrottleDelayMs
+    Verzögerung in Millisekunden zwischen API-Requests (Standard: 500).
+    Bei 429-Fehlern wird automatisch der Retry-After-Wert verwendet.
+
+.EXAMPLE
+    .\Import-PlannerData.ps1
+    Sucht automatisch nach Exporten und zeigt interaktive Auswahl.
+
+.EXAMPLE
+    .\Import-PlannerData.ps1 -DryRun
+    Listet alle gefundenen Exporte mit Gruppen/Tasks auf (kein Browser nötig).
+
+.EXAMPLE
+    .\Import-PlannerData.ps1 -ImportPath ".\PlannerExport_20260304_091500"
+    Importiert alle Pläne aus dem angegebenen Export
+
+.EXAMPLE
+    .\Import-PlannerData.ps1 -ImportPath ".\PlannerExport_20260304_091500" -DryRun
+    Vorschau: Zeigt was importiert werden würde, ohne Änderungen vorzunehmen.
+
+.EXAMPLE
+    .\Import-PlannerData.ps1 -ImportPath ".\PlannerExport_20260304_091500" -TargetGroupId "abc-123"
+    Importiert alle Pläne in eine bestimmte Zielgruppe.
+
+.EXAMPLE
+    .\Import-PlannerData.ps1 -ListGroups
+    Listet alle M365-Gruppen im Tenant auf.
+
 .NOTES
     Voraussetzungen:
     - PowerShell 5.1 oder höher (empfohlen: PowerShell 7+)
@@ -26,8 +86,7 @@
 #>
 
 param(
-    [Parameter(Mandatory = $true)]
-    [ValidateNotNullOrEmpty()]
+    [Parameter(Mandatory = $false)]
     [string]$ImportPath,
 
     [Parameter(Mandatory = $false)]
@@ -53,6 +112,12 @@ param(
 
     [Parameter(Mandatory = $false)]
     [switch]$DryRun,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$ListGroups,
+
+    [Parameter(Mandatory = $false)]
+    [string]$TenantId,
 
     [Parameter(Mandatory = $false)]
     [ValidateRange(0, 10000)]
@@ -90,7 +155,12 @@ function Write-PlannerLog {
         default  { "White" }
     })
     try {
-        $logEntry | Out-File -FilePath "$ImportPath\import.log" -Append -Encoding utf8 -ErrorAction Stop
+        $logFile = if ([string]::IsNullOrEmpty($ImportPath)) {
+            Join-Path (Get-Location).Path 'import.log'
+        } else {
+            "$ImportPath\import.log"
+        }
+        $logEntry | Out-File -FilePath $logFile -Append -Encoding utf8 -ErrorAction Stop
     }
     catch {
         Write-Host "[ERROR] Konnte nicht in Log-Datei schreiben: $_" -ForegroundColor Red
@@ -517,28 +587,129 @@ function Invoke-GraphWithRetry {
 }
 
 function Connect-ToGraph {
+    $script:AuthConfigPath = Join-Path $env:USERPROFILE '.planner-auth.json'
+
+    # Auth-Config laden/speichern
+    function Get-PlannerAuthConfig {
+        if (Test-Path $script:AuthConfigPath) {
+            try { return Get-Content $script:AuthConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json }
+            catch { return $null }
+        }
+        return $null
+    }
+    function Save-PlannerAuthConfig($tid, $account) {
+        try {
+            @{ TenantId = $tid; Account = $account; SavedAt = (Get-Date -Format 'o') } |
+                ConvertTo-Json | Out-File $script:AuthConfigPath -Encoding UTF8 -Force
+        } catch { }
+    }
+
     Write-PlannerLog "Verbinde mit Microsoft Graph..."
+    $scopes = "Group.ReadWrite.All", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All"
+
     try {
+        # Prüfe ob bereits verbunden (gleiche Session)
         $context = Get-MgContext
-        if ($null -eq $context) {
+        if ($null -ne $context -and -not [string]::IsNullOrEmpty($context.Account)) {
+            Write-PlannerLog "Bereits verbunden als: $($context.Account)" "OK"
+            return $true
+        }
+
+        # TenantId: Parameter > Config-Datei
+        $tid = if (-not [string]::IsNullOrEmpty($TenantId)) {
+            $TenantId
+        } else {
+            $cfg = Get-PlannerAuthConfig
+            if ($cfg -and $cfg.TenantId) {
+                Write-PlannerLog "Verwende gespeicherte TenantId ($($cfg.TenantId)) für automatische Anmeldung..."
+                $cfg.TenantId
+            } else { $null }
+        }
+
+        $connected = $false
+
+        # 1. Versuch: Silent-Auth via MSAL-Cache (nur wenn TenantId bekannt)
+        if ($tid) {
             try {
-                # Versuche zuerst interaktive Anmeldung
-                Connect-MgGraph -Scopes "Group.ReadWrite.All", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All" -NoWelcome -ErrorAction Stop
-            }
-            catch {
-                # Fallback auf Device Code Flow wenn Browser-Auth fehlschlägt
-                Write-PlannerLog "Browser-Authentifizierung fehlgeschlagen, verwende Device Code Flow..." "WARN"
-                Connect-MgGraph -Scopes "Group.ReadWrite.All", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All" -UseDeviceCode -NoWelcome
+                Connect-MgGraph -TenantId $tid -Scopes $scopes -NoWelcome -ErrorAction Stop
+                $connected = $true
+            } catch {
+                $errMsg = $_.Exception.Message
+                if ($_.Exception.InnerException) { $errMsg += ' ' + $_.Exception.InnerException.Message }
+                $isCancelled = $errMsg -match 'authentication_canceled|user_cancelled|UserCanceled' `
+                    -or $errMsg -match 'The user did not complete the authentication' `
+                    -or $errMsg -match 'Authentication was canceled by the user' `
+                    -or $errMsg -match 'abgebrochen|aborted|cancelled|canceled' `
+                    -or $_ -is [System.OperationCanceledException] `
+                    -or $_.Exception.InnerException -is [System.OperationCanceledException]
+                if ($isCancelled) {
+                    Write-Host ""
+                    Write-Host "Anmeldung wurde abgebrochen. Script wird beendet." -ForegroundColor Red
+                    Write-Host ""
+                    exit 1
+                }
+                Write-PlannerLog "Silent-Auth fehlgeschlagen, versuche interaktive Anmeldung..." "WARN"
             }
         }
+
+        # 2. Versuch: Interaktive Browser-Anmeldung
+        if (-not $connected) {
+            try {
+                $connectArgs = @{ Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop' }
+                if ($tid) { $connectArgs['TenantId'] = $tid }
+                Connect-MgGraph @connectArgs
+                $connected = $true
+            } catch {
+                $errMsg = $_.Exception.Message
+                if ($_.Exception.InnerException) { $errMsg += ' ' + $_.Exception.InnerException.Message }
+                $isCancelled = $errMsg -match 'authentication_canceled|user_cancelled|UserCanceled' `
+                    -or $errMsg -match 'The user did not complete the authentication' `
+                    -or $errMsg -match 'Authentication was canceled by the user' `
+                    -or $errMsg -match 'abgebrochen|aborted|cancelled|canceled' `
+                    -or $_ -is [System.OperationCanceledException] `
+                    -or $_.Exception.InnerException -is [System.OperationCanceledException]
+                if ($isCancelled) {
+                    Write-Host ""
+                    Write-Host "Anmeldung wurde abgebrochen. Script wird beendet." -ForegroundColor Red
+                    Write-Host ""
+                    exit 1
+                }
+                # 3. Fallback: Device Code Flow
+                Write-PlannerLog "Browser-Authentifizierung fehlgeschlagen, verwende Device Code Flow..." "WARN"
+                $connectArgs2 = @{ Scopes = $scopes; UseDeviceCode = $true; NoWelcome = $true; ErrorAction = 'Stop' }
+                if ($tid) { $connectArgs2['TenantId'] = $tid }
+                Connect-MgGraph @connectArgs2
+                $connected = $true
+            }
+        }
+
         $context = Get-MgContext
         if ($null -eq $context -or [string]::IsNullOrEmpty($context.Account)) {
             throw "Keine gültige Verbindung hergestellt"
         }
+
+        # TenantId + Account für nächste Ausführung speichern
+        $resolvedTid = if ($tid) { $tid } else { $context.TenantId }
+        Save-PlannerAuthConfig -tid $resolvedTid -account $context.Account
+
         Write-PlannerLog "Verbunden als: $($context.Account)" "OK"
         return $true
     }
     catch {
+        $errMsg = $_.Exception.Message
+        if ($_.Exception.InnerException) { $errMsg += ' ' + $_.Exception.InnerException.Message }
+        $isCancelled = $errMsg -match 'authentication_canceled|user_cancelled|UserCanceled' `
+            -or $errMsg -match 'The user did not complete the authentication' `
+            -or $errMsg -match 'Authentication was canceled by the user' `
+            -or $errMsg -match 'abgebrochen|aborted|cancelled|canceled' `
+            -or $_ -is [System.OperationCanceledException] `
+            -or $_.Exception.InnerException -is [System.OperationCanceledException]
+        if ($isCancelled) {
+            Write-Host ""
+            Write-Host "Anmeldung wurde abgebrochen. Script wird beendet." -ForegroundColor Red
+            Write-Host ""
+            exit 1
+        }
         Write-PlannerLog "Fehler bei der Verbindung: $_" "ERROR"
         return $false
     }
@@ -744,11 +915,12 @@ function Import-PlanFromJson {
         }
 
         return @{
-            Status = "DryRun"
-            PlanTitle = $planTitle
-            TargetGroupId = $groupId
-            BucketsCreated = $planData.Buckets.Count
-            TasksCreated = $planData.Tasks.Count
+            Status         = "DryRun"
+            PlanTitle      = $planTitle
+            GroupName      = $planData.Plan.groupDisplayName
+            TargetGroupId  = $groupId
+            BucketsCreated = @($planData.Buckets).Count
+            TasksCreated   = @($planData.Tasks).Count
         }
     }
 
@@ -1007,10 +1179,169 @@ function Import-PlanFromJson {
     }
 
     return @{
-        NewPlanId    = $newPlan.id
-        TasksCreated = $taskMapping.Count
+        NewPlanId      = $newPlan.id
+        PlanTitle      = $planTitle
+        GroupName      = $planData.Plan.groupDisplayName
+        GroupId        = $groupId
+        TasksCreated   = $taskMapping.Count
         BucketsCreated = $bucketMapping.Count
     }
+}
+
+function Get-M365GroupsForListing {
+    <#
+    .SYNOPSIS
+        Ruft alle M365-Gruppen (Unified) aus dem Tenant ab und gibt sie sortiert aus.
+    #>
+    $groups = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $uri = "https://graph.microsoft.com/v1.0/groups?`$filter=groupTypes/any(g:g eq 'Unified')" +
+           "&`$select=id,displayName,mail&`$top=999"
+    try {
+        do {
+            $response = Invoke-MgGraphRequest -Method GET -Uri $uri -OutputType PSObject -ErrorAction Stop
+            if ($response.value) {
+                foreach ($g in $response.value) {
+                    $groups.Add([PSCustomObject]@{
+                        Id          = $g.id
+                        DisplayName = $g.displayName
+                        Mail        = $g.mail
+                    })
+                }
+            }
+            $uri = $response.'@odata.nextLink'
+        } while ($uri)
+    }
+    catch {
+        Write-PlannerLog "Fehler beim Abrufen der Gruppen: $_" "ERROR"
+        return $null
+    }
+    return @($groups | Sort-Object DisplayName)
+}
+
+function Find-PlannerExports {
+    <#
+    .SYNOPSIS
+        Durchsucht Standard-Speicherorte nach Planner-Export-Verzeichnissen.
+    .OUTPUTS
+        Array von PSCustomObject mit Export-Metadaten, sortiert nach Datum (neueste zuerst).
+    #>
+
+    # Standard-Suchpfade (gleiche Priorität wie beim Export)
+    $searchPaths = [System.Collections.Generic.List[string]]::new()
+
+    # Aktuelles Verzeichnis
+    $searchPaths.Add((Get-Location).Path)
+
+    # Standard-Exportpfade
+    if (Test-Path 'C:\temp' -PathType Container) { $searchPaths.Add('C:\temp') }
+    if (Test-Path 'C:\tmp'  -PathType Container) { $searchPaths.Add('C:\tmp') }
+    $docsPath = [System.Environment]::GetFolderPath('MyDocuments')
+    if ($docsPath -and (Test-Path $docsPath -PathType Container)) { $searchPaths.Add($docsPath) }
+
+    $foundExports = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $seenPaths    = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase)
+
+    foreach ($searchPath in $searchPaths) {
+        $exportDirs = Get-ChildItem -Path $searchPath -Directory -Filter 'PlannerExport_*' `
+            -Recurse -Depth 1 -ErrorAction SilentlyContinue
+        foreach ($dir in $exportDirs) {
+            if (-not $seenPaths.Add($dir.FullName)) { continue }
+
+            $indexFile = Join-Path $dir.FullName '_ExportIndex.json'
+            if (-not (Test-Path $indexFile)) { continue }
+
+            try {
+                $index = Get-Content $indexFile -Raw -Encoding UTF8 | ConvertFrom-Json
+                $foundExports.Add([PSCustomObject]@{
+                    Path       = $dir.FullName
+                    FolderName = $dir.Name
+                    ExportDate = $index.ExportDate
+                    ExportedBy = $index.ExportedBy
+                    TotalPlans = $index.TotalPlans
+                    Plans      = $index.Plans
+                })
+            }
+            catch {
+                # Index-Datei nicht lesbar – trotzdem aufnehmen
+                $foundExports.Add([PSCustomObject]@{
+                    Path       = $dir.FullName
+                    FolderName = $dir.Name
+                    ExportDate = $null
+                    ExportedBy = $null
+                    TotalPlans = 0
+                    Plans      = @()
+                })
+            }
+        }
+    }
+
+    # Neueste Exporte zuerst
+    return @($foundExports | Sort-Object {
+        if ($_.ExportDate) {
+            try { [datetime]$_.ExportDate } catch { [datetime]::MinValue }
+        } else { [datetime]::MinValue }
+    } -Descending)
+}
+
+function Show-ExportSelectionMenu {
+    <#
+    .SYNOPSIS
+        Zeigt ein interaktives Auswahlmenü für gefundene Planner-Exporte.
+    .PARAMETER Exports
+        Array von Export-Objekten (Ausgabe von Find-PlannerExports).
+    .OUTPUTS
+        Pfad des gewählten Exports oder $null bei Abbruch.
+    #>
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject[]]$Exports
+    )
+
+    Write-Host ''
+    Write-Host 'Verfügbare Planner-Exporte:' -ForegroundColor Yellow
+    Write-Host '------------------------------------------------------------' -ForegroundColor DarkGray
+
+    for ($i = 0; $i -lt $Exports.Count; $i++) {
+        $exp     = $Exports[$i]
+        $dateStr = if ($exp.ExportDate) {
+            try { ([datetime]$exp.ExportDate).ToString('dd.MM.yyyy HH:mm:ss') } catch { $exp.ExportDate }
+        } else { 'Datum unbekannt' }
+
+        Write-Host ''
+        Write-Host "  [$($i + 1)] $($exp.FolderName)" -ForegroundColor Cyan
+        Write-Host "      Exportiert am  : $dateStr" -ForegroundColor Gray
+        if ($exp.ExportedBy) {
+            Write-Host "      Exportiert von : $($exp.ExportedBy)" -ForegroundColor Gray
+        }
+
+        if ($exp.Plans -and $exp.Plans.Count -gt 0) {
+            foreach ($plan in $exp.Plans) {
+                $groupInfo = if ($plan.GroupName) { " (Gruppe: $($plan.GroupName))" } else { '' }
+                $taskInfo  = if ($null -ne $plan.Tasks) { ", $($plan.Tasks) Tasks" } else { '' }
+                $bucketInfo = if ($null -ne $plan.Buckets) { ", $($plan.Buckets) Buckets" } else { '' }
+                Write-Host "        - $($plan.PlanTitle)$groupInfo$taskInfo$bucketInfo" -ForegroundColor White
+            }
+        } else {
+            Write-Host '        (Keine Plan-Metadaten verfügbar)' -ForegroundColor DarkGray
+        }
+    }
+
+    Write-Host ''
+    Write-Host '------------------------------------------------------------' -ForegroundColor DarkGray
+    Write-Host ''
+
+    do {
+        $selection = Read-Host "Export auswählen [1-$($Exports.Count)] oder 'q' zum Abbrechen"
+        if ($selection -eq 'q' -or $selection -eq 'Q') {
+            return $null
+        }
+        $num = 0
+        if ([int]::TryParse($selection, [ref]$num) -and $num -ge 1 -and $num -le $Exports.Count) {
+            return $Exports[$num - 1].Path
+        }
+        Write-Host "  Ungültige Eingabe. Bitte eine Zahl zwischen 1 und $($Exports.Count) eingeben." -ForegroundColor Red
+    } while ($true)
 }
 
 #endregion
@@ -1027,6 +1358,150 @@ Write-Host ""
 if ($DryRun) {
     Write-Host "  *** DRY RUN MODUS - Es werden keine Änderungen vorgenommen ***" -ForegroundColor Magenta
     Write-Host ""
+}
+
+# Wenn kein ImportPath angegeben: Standard-Speicherorte nach Exporten durchsuchen
+# (kein Graph-Login nötig – liest nur lokale JSON-Dateien)
+# Bei -ListGroups wird dieser Block übersprungen
+if ([string]::IsNullOrEmpty($ImportPath) -and -not $ListGroups) {
+    Write-Host 'Suche nach Planner-Exporten in Standard-Speicherorten...' -ForegroundColor Yellow
+    Write-Host ''
+
+    $availableExports = Find-PlannerExports
+
+    if ($availableExports.Count -eq 0) {
+        Write-Host 'Keine Planner-Exporte gefunden.' -ForegroundColor Red
+        Write-Host ''
+        Write-Host 'Durchsuchte Verzeichnisse:' -ForegroundColor White
+        Write-Host '  - Aktuelles Verzeichnis' -ForegroundColor Gray
+        if (Test-Path 'C:\temp' -PathType Container) { Write-Host '  - C:\temp' -ForegroundColor Gray }
+        if (Test-Path 'C:\tmp'  -PathType Container) { Write-Host '  - C:\tmp'  -ForegroundColor Gray }
+        $docsPath = [System.Environment]::GetFolderPath('MyDocuments')
+        if ($docsPath) { Write-Host "  - $docsPath" -ForegroundColor Gray }
+        Write-Host ''
+        Write-Host 'Import-Pfad manuell angeben:' -ForegroundColor White
+        Write-Host '  .\Import-PlannerData.ps1 -ImportPath "<Pfad-zum-Export-Verzeichnis>"' -ForegroundColor White
+        Write-Host ''
+        exit 1
+    }
+
+    # DryRun ohne ImportPath: alle Exporte mit Gruppen auflisten, kein Import
+    if ($DryRun) {
+        Write-Host '============================================================' -ForegroundColor Cyan
+        Write-Host '  ÜBERSICHT ALLER VERFÜGBAREN EXPORTE (DRY RUN)' -ForegroundColor Cyan
+        Write-Host '============================================================' -ForegroundColor Cyan
+
+        $totalPlans   = 0
+        $totalTasks   = 0
+        $totalBuckets = 0
+
+        foreach ($exp in $availableExports) {
+            $dateStr = if ($exp.ExportDate) {
+                try { ([datetime]$exp.ExportDate).ToString('dd.MM.yyyy HH:mm:ss') } catch { $exp.ExportDate }
+            } else { 'Datum unbekannt' }
+
+            Write-Host ''
+            Write-Host "  $($exp.FolderName)" -ForegroundColor Cyan
+            Write-Host "    Exportiert am: $dateStr" -ForegroundColor Gray
+            if ($exp.ExportedBy) {
+                Write-Host "    Exportiert von: $($exp.ExportedBy)" -ForegroundColor Gray
+            }
+
+            if ($exp.Plans -and $exp.Plans.Count -gt 0) {
+                # Gruppen zusammenfassen
+                $groups = @($exp.Plans | Where-Object { $_.GroupName } |
+                    Select-Object -ExpandProperty GroupName -Unique | Sort-Object)
+                if ($groups.Count -gt 0) {
+                    Write-Host "    Gruppen: $($groups -join ', ')" -ForegroundColor White
+                }
+
+                Write-Host "    Pläne ($($exp.Plans.Count)):" -ForegroundColor White
+                foreach ($plan in $exp.Plans) {
+                    $grp     = if ($plan.GroupName) { " (Gruppe: $($plan.GroupName))" } else { '' }
+                    $tasks   = if ($null -ne $plan.Tasks)   { "$($plan.Tasks) Tasks"   } else { '? Tasks' }
+                    $buckets = if ($null -ne $plan.Buckets) { "$($plan.Buckets) Buckets" } else { '? Buckets' }
+                    Write-Host "      - $($plan.PlanTitle)$grp  |  $buckets, $tasks" -ForegroundColor Gray
+                    $totalPlans++
+                    $totalTasks   += [int]($plan.Tasks)
+                    $totalBuckets += [int]($plan.Buckets)
+                }
+            } else {
+                Write-Host '    (Keine Plan-Metadaten verfügbar)' -ForegroundColor DarkGray
+            }
+        }
+
+        Write-Host ''
+        Write-Host '------------------------------------------------------------' -ForegroundColor DarkGray
+        Write-Host "  Gesamt: $($availableExports.Count) Export(e)  |  $totalPlans Pläne  |  $totalBuckets Buckets  |  $totalTasks Tasks" -ForegroundColor Yellow
+        Write-Host ''
+        Write-Host 'Import starten mit:' -ForegroundColor White
+        Write-Host '  .\Import-PlannerData.ps1 -ImportPath "<Pfad>"' -ForegroundColor Gray
+        Write-Host '  .\Import-PlannerData.ps1   (interaktive Auswahl)' -ForegroundColor Gray
+        Write-Host ''
+        exit 0
+    }
+
+    $selectedPath = Show-ExportSelectionMenu -Exports $availableExports
+
+    if ($null -eq $selectedPath) {
+        Write-Host ''
+        Write-Host 'Import abgebrochen.' -ForegroundColor Yellow
+        exit 0
+    }
+
+    $ImportPath = $selectedPath
+    Write-Host ''
+    Write-Host "Gewähltes Export-Verzeichnis: $ImportPath" -ForegroundColor Green
+    Write-Host ''
+}
+
+# Microsoft Graph Module und Verbindung
+Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
+
+if (-not (Connect-ToGraph)) {
+    Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph möglich." "ERROR"
+    exit 1
+}
+
+# Gruppen auflisten und beenden (-ListGroups benötigt Graph-Verbindung)
+if ($ListGroups) {
+    Write-Host ''
+    Write-Host '============================================================' -ForegroundColor Cyan
+    Write-Host '  M365-GRUPPEN IM TENANT' -ForegroundColor Cyan
+    Write-Host '============================================================' -ForegroundColor Cyan
+    Write-Host ''
+
+    $groups = Get-M365GroupsForListing
+    if ($null -eq $groups) {
+        Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+        exit 1
+    }
+    if ($groups.Count -eq 0) {
+        Write-Host '  Keine M365-Gruppen gefunden.' -ForegroundColor Yellow
+        Write-Host ''
+        Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+        exit 0
+    }
+
+    $maxLen = ($groups | ForEach-Object { $_.DisplayName.Length } | Measure-Object -Maximum).Maximum
+    $maxLen = [Math]::Max($maxLen, 20)
+
+    Write-Host ('  {0,-' + $maxLen + '}  {1,-38}  {2}') -f 'Gruppenname', 'Gruppen-ID', 'E-Mail' -ForegroundColor Yellow
+    Write-Host ('  {0}  {1}  {2}') -f ('-' * $maxLen), ('-' * 38), ('-' * 40) -ForegroundColor DarkGray
+
+    foreach ($g in $groups) {
+        Write-Host ('  {0,-' + $maxLen + '}  {1,-38}  {2}') -f $g.DisplayName, $g.Id, $g.Mail
+    }
+
+    Write-Host ''
+    Write-Host "  Gesamt: $($groups.Count) Gruppe(n)" -ForegroundColor Gray
+    Write-Host ''
+    Write-Host 'Tipp: Gruppen-ID als Ziel angeben mit:' -ForegroundColor White
+    Write-Host '  .\Import-PlannerData.ps1 -ImportPath "<Pfad>" -TargetGroupId "<ID>"' -ForegroundColor Gray
+    Write-Host ''
+
+    Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+    exit 0
 }
 
 # Validiere Import-Verzeichnis
@@ -1073,15 +1548,6 @@ if (-not $DryRun) {
     }
 }
 
-# Microsoft Graph Module und Verbindung
-Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
-
-# Verbindung auch im DryRun herstellen für Validierung
-if (-not (Connect-ToGraph)) {
-    Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph möglich." "ERROR"
-    exit 1
-}
-
 # Validiere Zielgruppe wenn angegeben
 if ($TargetGroupId) {
     Write-Host ""
@@ -1116,17 +1582,24 @@ if ($DryRun) {
     Write-Host ""
     
     # DryRun summary
-    $validResults = $importResults | Where-Object { $_.Status -eq "DryRun" }
+    $validResults = @($importResults | Where-Object { $_.Status -eq "DryRun" })
     if ($validResults.Count -gt 0) {
-        $totalTasksToImport = ($validResults | Measure-Object -Property TasksCreated -Sum).Sum
-        $totalBucketsToImport = ($validResults | Measure-Object -Property BucketsCreated -Sum).Sum
+        $totalTasksToImport   = ($validResults | ForEach-Object { [int]($_.TasksCreated)   } | Measure-Object -Sum).Sum
+        $totalBucketsToImport = ($validResults | ForEach-Object { [int]($_.BucketsCreated) } | Measure-Object -Sum).Sum
         Write-Host "  Würde importieren:" -ForegroundColor White
         Write-Host "    Pläne:    $($validResults.Count)" -ForegroundColor Cyan
         Write-Host "    Buckets:  $totalBucketsToImport" -ForegroundColor Cyan
         Write-Host "    Tasks:    $totalTasksToImport" -ForegroundColor Cyan
         Write-Host ""
+        Write-Host "  Details je Plan:" -ForegroundColor White
+        foreach ($r in $validResults) {
+            $grp = if ($r.GroupName) { " (Gruppe: $($r.GroupName))" } else { " (Gruppe-ID: $($r.TargetGroupId))" }
+            Write-Host "    - $($r.PlanTitle)$grp" -ForegroundColor Cyan
+            Write-Host "        Buckets: $($r.BucketsCreated)   Tasks: $($r.TasksCreated)" -ForegroundColor Gray
+        }
+        Write-Host ""
     }
-    
+
     $failedValidations = $importResults | Where-Object { $null -eq $_.Status -or $_.Status -ne "DryRun" }
     if ($failedValidations.Count -gt 0) {
         Write-Host "  Validierungsfehler bei $($failedValidations.Count) Plan(en)" -ForegroundColor Yellow
@@ -1135,12 +1608,19 @@ if ($DryRun) {
 }
 else {
     # Success summary
-    $totalTasksImported = ($importResults | Measure-Object -Property TasksCreated -Sum).Sum
-    $totalBucketsImported = ($importResults | Measure-Object -Property BucketsCreated -Sum).Sum
+    $totalTasksImported   = ($importResults | ForEach-Object { [int]($_.TasksCreated)   } | Measure-Object -Sum).Sum
+    $totalBucketsImported = ($importResults | ForEach-Object { [int]($_.BucketsCreated) } | Measure-Object -Sum).Sum
     Write-Host "  Erfolgreich importiert:" -ForegroundColor White
     Write-Host "    Pläne:    $($importResults.Count)" -ForegroundColor Green
     Write-Host "    Buckets:  $totalBucketsImported" -ForegroundColor Green
     Write-Host "    Tasks:    $totalTasksImported" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  Details je Plan:" -ForegroundColor White
+    foreach ($r in $importResults) {
+        $grp = if ($r.GroupName) { " (Gruppe: $($r.GroupName))" } else { " (Gruppe-ID: $($r.GroupId))" }
+        Write-Host "    - $($r.PlanTitle)$grp" -ForegroundColor Green
+        Write-Host "        Buckets: $($r.BucketsCreated)   Tasks: $($r.TasksCreated)" -ForegroundColor Gray
+    }
     Write-Host ""
 
     # Cache statistics
@@ -1148,7 +1628,12 @@ else {
 }
 
 # Error summary and exit code
-$exitCode = Write-ErrorSummary -OutputPath $ImportPath
+# Im DryRun keine Fehlerstatistik ausgeben (Zähler wurden nicht befüllt)
+if ($DryRun) {
+    $exitCode = 0
+} else {
+    $exitCode = Write-ErrorSummary -OutputPath $ImportPath
+}
 
 Write-PlannerLog "Import abgeschlossen mit Exit-Code: $exitCode"
 Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
