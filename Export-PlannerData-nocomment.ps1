@@ -1,77 +1,4 @@
-﻿<#
-.SYNOPSIS
-    Exportiert Microsoft Planner-Daten (Pläne, Buckets, Tasks, Details) aus M365-Gruppen via Microsoft Graph API.
-
-.DESCRIPTION
-    Dieses Script liest Planner-Pläne aus Microsoft 365 und exportiert sämtliche Daten
-    (Buckets, Tasks inkl. Checklisten, Anhänge, Beschreibungen, Zuweisungen etc.)
-    in JSON-Dateien, die für einen späteren Re-Import verwendet werden können.
-
-    Zwei Export-Modi verfügbar:
-    1. User-basiert: Alle Pläne des aktuellen Benutzers (-UseCurrentUser)
-    2. Gruppen-basiert: Pläne aus spezifischen M365-Gruppen (-GroupNames/-GroupIds/-Interactive)
-
-.PARAMETER ExportPath
-    Zielpfad für den Export. Standard-Verzeichnis wird automatisch ermittelt:
-    1. C:\temp (falls vorhanden)
-    2. C:\tmp (falls vorhanden)
-    3. Dokumente-Ordner des aktuellen Benutzers
-
-.PARAMETER GroupNames
-    Namen der M365-Gruppen/SharePoint-Seiten, aus denen Pläne exportiert werden sollen.
-    Beispiel: -GroupNames "Projektteam Alpha", "Marketing"
-
-.PARAMETER GroupIds
-    Direkte Angabe von M365-Gruppen-IDs (alternative zu GroupNames).
-    Beispiel: -GroupIds "abc-123-def", "xyz-789-uvw"
-
-.PARAMETER Interactive
-    Zeigt eine interaktive Auswahl aller verfügbaren M365-Gruppen.
-
-.PARAMETER IncludeCompletedTasks
-    Exportiert auch abgeschlossene Tasks (Standard: nur aktive Tasks).
-
-.PARAMETER UseCurrentUser
-    Exportiert alle Pläne des aktuellen Benutzers aus allen seinen M365-Gruppen.
-    Dies ist eine Alternative zu -GroupIds, -GroupNames oder -Interactive.
-
-.PARAMETER TenantId
-    Azure AD Tenant-ID für die Authentifizierung. Wird beim ersten erfolgreichen
-    Login automatisch in ~/.planner-auth.json gespeichert und bei späteren
-    Ausführungen für lautlose Anmeldung (ohne Browser) wiederverwendet.
-
-.EXAMPLE
-    .\Export-PlannerData.ps1 -UseCurrentUser
-    Exportiert alle Pläne des angemeldeten Benutzers aus allen seinen Gruppen
-
-.EXAMPLE
-    .\Export-PlannerData.ps1 -UseCurrentUser -IncludeCompletedTasks
-    Exportiert alle Pläne des Users inkl. abgeschlossener Tasks
-
-.EXAMPLE
-    .\Export-PlannerData.ps1 -GroupNames "Projektteam Alpha"
-    Exportiert alle Pläne der Gruppe "Projektteam Alpha"
-
-.EXAMPLE
-    .\Export-PlannerData.ps1 -Interactive
-    Zeigt interaktive Gruppenauswahl
-
-.EXAMPLE
-    .\Export-PlannerData.ps1 -GroupIds "abc-123-def" -IncludeCompletedTasks
-    Exportiert Pläne der angegebenen Gruppe inkl. abgeschlossener Tasks
-
-.NOTES
-    Voraussetzungen:
-    - PowerShell 5.1 oder höher (empfohlen: PowerShell 7+)
-    - Microsoft.Graph PowerShell Module
-      Install-Module Microsoft.Graph -Scope CurrentUser
-    - Berechtigungen: Group.Read.All, Tasks.Read, Tasks.ReadWrite, User.Read
-
-.AUTHOR
-    Alexander Waller
-    Datum: 2026-02-16
-#>
-
+﻿
 param(
     [Parameter(Mandatory = $false)]
     [string]$ExportPath,
@@ -97,14 +24,11 @@ param(
     [string]$TenantId
 )
 
-# ISE-Erkennung: PowerShell ISE unterstützt keine modernen Authentifizierungsflows (WAM/DeviceCode)
 if ($host.Name -eq 'Windows PowerShell ISE Host') {
     Write-Warning "PowerShell ISE wird nicht vollständig unterstützt. Bitte verwenden Sie PowerShell 7 (pwsh.exe) oder Windows PowerShell (powershell.exe) statt ISE."
     Write-Warning "Authentifizierungsprobleme sind in ISE zu erwarten. WAM wird deaktiviert."
     $env:MSAL_ENABLE_WAM = "0"
 }
-
-#region Funktionen
 
 function Write-PlannerLog {
     param([string]$Message, [string]$Level = "INFO")
@@ -119,10 +43,7 @@ function Write-PlannerLog {
 }
 
 function Test-SafePath {
-    <#
-    .SYNOPSIS
-        Validiert einen Dateisystempfad auf Sicherheit und Zugänglichkeit
-    #>
+    
     param(
         [Parameter(Mandatory = $true)]
         [string]$Path,
@@ -138,19 +59,16 @@ function Test-SafePath {
         [ref]$ErrorMessage
     )
 
-    # 1. Null/Leer-Check
     if ([string]::IsNullOrWhiteSpace($Path)) {
         if ($ErrorMessage) { $ErrorMessage.Value = "Pfad darf nicht leer sein" }
         return $false
     }
 
-    # 2. UNC-Pfad blockieren (Sicherheit)
     if ($Path -match '^\\\\') {
         if ($ErrorMessage) { $ErrorMessage.Value = "UNC-Pfade (Netzwerkpfade) sind aus Sicherheitsgründen nicht erlaubt: $Path" }
         return $false
     }
 
-    # 3. Pfad normalisieren (Relative Pfade auflösen, .. entfernen)
     try {
         $normalizedPath = [System.IO.Path]::GetFullPath($Path)
     }
@@ -159,17 +77,13 @@ function Test-SafePath {
         return $false
     }
 
-    # 4. Modus-spezifische Validierung
     if ($Mode -eq 'Export') {
-        # Export: Pfad muss schreibbar sein oder erstellt werden können
         if (Test-Path $normalizedPath) {
-            # Existiert bereits - muss Verzeichnis sein
             if (-not (Test-Path $normalizedPath -PathType Container)) {
                 if ($ErrorMessage) { $ErrorMessage.Value = "Pfad existiert bereits als Datei (kein Verzeichnis): $normalizedPath" }
                 return $false
             }
 
-            # Schreibrechte testen
             try {
                 $testFile = Join-Path $normalizedPath ".write_test_$([guid]::NewGuid().ToString('N').Substring(0,8))"
                 [System.IO.File]::WriteAllText($testFile, "test")
@@ -181,7 +95,6 @@ function Test-SafePath {
             }
         }
         else {
-            # Existiert nicht - übergeordnetes Verzeichnis prüfen
             $parentPath = Split-Path $normalizedPath -Parent
 
             if (-not $parentPath) {
@@ -191,7 +104,6 @@ function Test-SafePath {
 
             if (-not (Test-Path $parentPath)) {
                 if ($AllowCreate) {
-                    # Prüfe ob Großeltern-Verzeichnis existiert (max 1 Ebene erstellen)
                     $grandparentPath = Split-Path $parentPath -Parent
                     if ($grandparentPath -and -not (Test-Path $grandparentPath)) {
                         if ($ErrorMessage) { $ErrorMessage.Value = "Übergeordnetes Verzeichnis existiert nicht: $grandparentPath (maximal 1 Ebene kann automatisch erstellt werden)" }
@@ -204,7 +116,6 @@ function Test-SafePath {
                 }
             }
 
-            # Schreibrechte für übergeordnetes Verzeichnis testen
             try {
                 $testParentPath = if (Test-Path $parentPath) { $parentPath } else { Split-Path $parentPath -Parent }
                 $testFile = Join-Path $testParentPath ".write_test_$([guid]::NewGuid().ToString('N').Substring(0,8))"
@@ -218,19 +129,16 @@ function Test-SafePath {
         }
     }
     elseif ($Mode -eq 'Import') {
-        # Import: Pfad muss existieren und lesbar sein
         if (-not (Test-Path $normalizedPath)) {
             if ($ErrorMessage) { $ErrorMessage.Value = "Import-Verzeichnis existiert nicht: $normalizedPath" }
             return $false
         }
 
-        # Muss Verzeichnis sein
         if (-not (Test-Path $normalizedPath -PathType Container)) {
             if ($ErrorMessage) { $ErrorMessage.Value = "Import-Pfad ist kein Verzeichnis: $normalizedPath" }
             return $false
         }
 
-        # Leserechte testen
         try {
             Get-ChildItem $normalizedPath -ErrorAction Stop | Out-Null
         }
@@ -246,7 +154,6 @@ function Test-SafePath {
 function Connect-ToGraph {
     $script:AuthConfigPath = Join-Path $env:USERPROFILE '.planner-auth.json'
 
-    # Auth-Config laden/speichern
     function Get-PlannerAuthConfig {
         if (Test-Path $script:AuthConfigPath) {
             try { return Get-Content $script:AuthConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json }
@@ -265,14 +172,12 @@ function Connect-ToGraph {
     $scopes = "Group.Read.All", "Tasks.Read", "Tasks.ReadWrite", "User.Read", "User.ReadBasic.All"
 
     try {
-        # Prüfe ob bereits verbunden (gleiche Session)
         $context = Get-MgContext
         if ($null -ne $context -and -not [string]::IsNullOrEmpty($context.Account)) {
             Write-PlannerLog "Bereits verbunden als: $($context.Account)" "OK"
             return $true
         }
 
-        # TenantId + Account: Parameter > Config-Datei
         $cfg = Get-PlannerAuthConfig
         $savedAccount = if ($cfg) { $cfg.Account } else { $null }
 
@@ -287,7 +192,6 @@ function Connect-ToGraph {
 
         $connected = $false
 
-        # 1. Versuch: Silent-Auth via MSAL-Cache (nur wenn TenantId bekannt)
         if ($tid) {
             try {
                 $silentArgs = @{ TenantId = $tid; Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop'; WarningAction = 'SilentlyContinue' }
@@ -312,7 +216,6 @@ function Connect-ToGraph {
             }
         }
 
-        # 2. Interaktive Anmeldung: Benutzer wählt Browser oder Device Code
         if (-not $connected) {
             Write-Host ""
             Write-Host "  Anmeldung erforderlich" -ForegroundColor Yellow
@@ -360,7 +263,6 @@ function Connect-ToGraph {
             throw "Keine gültige Verbindung hergestellt"
         }
 
-        # TenantId + Account für nächste Ausführung speichern
         $resolvedTid = if ($tid) { $tid } else { $context.TenantId }
         Save-PlannerAuthConfig -tid $resolvedTid -account $context.Account
 
@@ -430,8 +332,6 @@ function Get-GroupsByNames {
         }
 
         try {
-            # Suche nach exaktem Namen oder ähnlichem Namen
-            # Hinweis: Sonderzeichen in Gruppennamen könnten zu Problemen führen
             $uri = "https://graph.microsoft.com/v1.0/groups?`$filter=groupTypes/any(g:g eq 'Unified') and (displayName eq '$name' or startswith(displayName,'$name'))&`$select=id,displayName,mail"
 
             $response = Invoke-MgGraphRequest -Method GET -Uri $uri -OutputType PSObject
@@ -443,7 +343,6 @@ function Get-GroupsByNames {
                 $matchCount = $response.value.Count
                 Write-PlannerLog "  $matchCount Gruppe(n) gefunden für: $name"
                 foreach ($group in $response.value) {
-                    # Duplikate vermeiden
                     if ($foundGroups.id -notcontains $group.id) {
                         $foundGroups += $group
                         Write-PlannerLog "    -> $($group.displayName) ($($group.id))" "OK"
@@ -513,7 +412,6 @@ function Get-AllUserPlans {
     $plans = @()
 
     try {
-        # Methode 1: Über die Gruppen des Benutzers
         $myGroups = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/me/memberOf/microsoft.graph.group?`$filter=groupTypes/any(g:g eq 'Unified')&`$select=id,displayName" -OutputType PSObject
 
         if ($null -eq $myGroups) {
@@ -543,7 +441,6 @@ function Get-AllUserPlans {
             Write-PlannerLog "Benutzer ist kein Mitglied von M365-Gruppen" "WARN"
         }
 
-        # Methode 2: Direkt über /me/planner/plans (falls unterstützt)
         try {
             $myPlans = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/me/planner/plans" -OutputType PSObject
             if ($myPlans.value -and $myPlans.value.Count -gt 0) {
@@ -573,10 +470,9 @@ function Get-PlansByGroupIds {
     $plans = @()
 
     foreach ($groupId in $GroupIds) {
-        $groupDisplayName = $groupId   # Fallback falls Gruppenname-Abruf fehlschlägt
+        $groupDisplayName = $groupId
         Write-PlannerLog "Lade Pläne für Gruppe: $groupId"
         try {
-            # Gruppenname laden
             $group = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/groups/$groupId`?`$select=id,displayName" -OutputType PSObject
             $groupDisplayName = $group.displayName
 
@@ -602,7 +498,6 @@ function Get-PlansByGroupIds {
         }
     }
 
-    # Komma-Operator verhindert Pipeline-Unrolling leerer Arrays (PowerShell-Eigenheit)
     return ,$plans
 }
 
@@ -620,13 +515,11 @@ function Export-PlanDetails {
         Categories = @{}
     }
 
-    # Plan-Details laden (Kategorien/Labels)
     try {
         $planDetails = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/planner/plans/$($Plan.id)/details" -OutputType PSObject
         $planData.Categories = $planDetails.categoryDescriptions
         $planData["PlanDetails"] = $planDetails
 
-        # ETag speichern für späteren Import
         if ($planDetails.'@odata.etag') {
             $planData["PlanDetailsEtag"] = $planDetails.'@odata.etag'
         }
@@ -635,7 +528,6 @@ function Export-PlanDetails {
         Write-PlannerLog "  Konnte Plan-Details nicht laden: $_" "WARN"
     }
 
-    # Buckets laden
     try {
         $buckets = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/planner/plans/$($Plan.id)/buckets" -OutputType PSObject
         $planData.Buckets = $buckets.value
@@ -645,7 +537,6 @@ function Export-PlanDetails {
         Write-PlannerLog "  Fehler beim Laden der Buckets: $_" "ERROR"
     }
 
-    # Tasks laden (mit Paging)
     try {
         $allTasks = @()
         $tasksUri = "https://graph.microsoft.com/v1.0/planner/plans/$($Plan.id)/tasks"
@@ -658,7 +549,6 @@ function Export-PlanDetails {
             $tasksUri = $tasksResponse.'@odata.nextLink'
         } while ($tasksUri)
 
-        # Optional: Abgeschlossene Tasks filtern
         if (-not $IncludeCompletedTasks) {
             $completedCount = ($allTasks | Where-Object { $_.percentComplete -eq 100 }).Count
             Write-PlannerLog "  $completedCount abgeschlossene Tasks werden übersprungen (verwende -IncludeCompletedTasks um diese einzubeziehen)"
@@ -668,7 +558,6 @@ function Export-PlanDetails {
         $planData.Tasks = $allTasks
         Write-PlannerLog "  $($allTasks.Count) Tasks geladen"
 
-        # Task-Details laden (Beschreibungen, Checklisten, Referenzen)
         $taskDetails = @()
         $counter = 0
         foreach ($task in $allTasks) {
@@ -680,7 +569,6 @@ function Export-PlanDetails {
                 $detail | Add-Member -NotePropertyName "taskId" -NotePropertyValue $task.id -Force
                 $taskDetails += $detail
 
-                # Rate Limiting vermeiden
                 Start-Sleep -Milliseconds 200
             }
             catch {
@@ -695,7 +583,6 @@ function Export-PlanDetails {
         Write-PlannerLog "  Fehler beim Laden der Tasks: $_" "ERROR"
     }
 
-    # Benutzerinfo für Zuweisungen auflösen
     $userIds = @()
     foreach ($task in $planData.Tasks) {
         if ($task.assignments) {
@@ -728,16 +615,11 @@ function Export-PlanDetails {
     }
     $planData["UserMap"] = $userMap
 
-    # Exportieren
-    # Sanitize plan title for filename (remove invalid characters and limit length)
     $sanitizedTitle = ($Plan.title -replace '[\\/:*?"<>|]', '_')
-    # Limit filename length (Windows MAX_PATH consideration)
     if ($sanitizedTitle.Length -gt 100) {
         $sanitizedTitle = $sanitizedTitle.Substring(0, 100)
     }
-    # Remove trailing dots/spaces (Windows filesystem restriction)
     $planFileName = $sanitizedTitle.TrimEnd(' ', '.')
-    # Fallback for edge cases (empty after sanitization)
     if ([string]::IsNullOrWhiteSpace($planFileName)) {
         $planFileName = "unnamed_plan_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
     }
@@ -758,7 +640,6 @@ function Export-PlanDetails {
     }
     Write-PlannerLog "  Plan exportiert nach: $planFilePath" "OK"
 
-    # Zusätzlich eine lesbare Zusammenfassung erstellen
     Export-ReadableSummary -PlanData $planData -OutputPath (Join-Path $PlanExportPath "$planFileName`_Zusammenfassung.txt")
 
     return $planData
@@ -781,7 +662,6 @@ function Export-ReadableSummary {
     [void]$sb.AppendLine("=" * 80)
     [void]$sb.AppendLine("")
 
-    # Kategorien/Labels
     if ($PlanData.Categories) {
         [void]$sb.AppendLine("KATEGORIEN / LABELS:")
         $PlanData.Categories.PSObject.Properties | Where-Object { $_.Value } | ForEach-Object {
@@ -790,7 +670,6 @@ function Export-ReadableSummary {
         [void]$sb.AppendLine("")
     }
 
-    # Buckets und Tasks
     foreach ($bucket in ($PlanData.Buckets | Sort-Object orderHint)) {
         [void]$sb.AppendLine("-" * 60)
         [void]$sb.AppendLine("BUCKET: $($bucket.name)")
@@ -812,7 +691,6 @@ function Export-ReadableSummary {
                 [void]$sb.AppendLine("")
                 [void]$sb.AppendLine("  $status $($task.title)")
 
-                # Priorität
                 $priority = switch ($task.priority) {
                     0 { "Dringend" }
                     1 { "Wichtig" }
@@ -821,7 +699,6 @@ function Export-ReadableSummary {
                 }
                 [void]$sb.AppendLine("    Priorität: $priority")
 
-                # Fälligkeitsdatum
                 if ($task.dueDateTime) {
                     try {
                         $dueDate = ([DateTimeOffset]::Parse($task.dueDateTime)).DateTime.ToString("dd.MM.yyyy")
@@ -831,7 +708,6 @@ function Export-ReadableSummary {
                     [void]$sb.AppendLine("    Fällig am: $dueDate")
                 }
 
-                # Startdatum
                 if ($task.startDateTime) {
                     try {
                         $startDate = ([DateTimeOffset]::Parse($task.startDateTime)).DateTime.ToString("dd.MM.yyyy")
@@ -841,7 +717,6 @@ function Export-ReadableSummary {
                     [void]$sb.AppendLine("    Start: $startDate")
                 }
 
-                # Zuweisungen
                 if ($task.assignments) {
                     $assignees = @()
                     $task.assignments.PSObject.Properties | ForEach-Object {
@@ -854,7 +729,6 @@ function Export-ReadableSummary {
                     }
                 }
 
-                # Labels/Kategorien
                 if ($task.appliedCategories) {
                     $labels = @()
                     $task.appliedCategories.PSObject.Properties | Where-Object { $_.Value -eq $true } | ForEach-Object {
@@ -870,10 +744,8 @@ function Export-ReadableSummary {
                     }
                 }
 
-                # Task-Details
                 $detail = $PlanData.TaskDetails | Where-Object { $_.taskId -eq $task.id }
                 if ($detail) {
-                    # Beschreibung
                     if ($detail.description) {
                         [void]$sb.AppendLine("    Beschreibung:")
                         $detail.description -split "`n" | ForEach-Object {
@@ -881,7 +753,6 @@ function Export-ReadableSummary {
                         }
                     }
 
-                    # Checkliste
                     if ($detail.checklist) {
                         [void]$sb.AppendLine("    Checkliste:")
                         $detail.checklist.PSObject.Properties | ForEach-Object {
@@ -891,7 +762,6 @@ function Export-ReadableSummary {
                         }
                     }
 
-                    # Referenzen/Links
                     if ($detail.references) {
                         $refs = $detail.references.PSObject.Properties
                         if ($refs.Count -gt 0) {
@@ -909,7 +779,6 @@ function Export-ReadableSummary {
         [void]$sb.AppendLine("")
     }
 
-    # Tasks ohne Bucket
     $orphanTasks = $PlanData.Tasks | Where-Object { -not $_.bucketId -or ($PlanData.Buckets.id -notcontains $_.bucketId) }
     if ($orphanTasks.Count -gt 0) {
         [void]$sb.AppendLine("-" * 60)
@@ -920,7 +789,6 @@ function Export-ReadableSummary {
         }
     }
 
-    # Statistik
     [void]$sb.AppendLine("")
     [void]$sb.AppendLine("=" * 80)
     [void]$sb.AppendLine("STATISTIK:")
@@ -940,11 +808,6 @@ function Export-ReadableSummary {
     }
 }
 
-#endregion
-
-#region Hauptprogramm
-
-# Pro Programmstart eine eigene Log-Datei (ohne Farbcodes)
 $logsDir = Join-Path $PSScriptRoot "logs"
 if (-not (Test-Path $logsDir)) { New-Item -ItemType Directory -Path $logsDir | Out-Null }
 $transcriptPath = Join-Path $logsDir ("export_" + (Get-Date -Format 'yyyyMMdd_HHmmss') + ".log")
@@ -962,13 +825,11 @@ Write-Host "  by Alexander Waller" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Standard-ExportPath ermitteln, falls nicht angegeben
 $isAutoDetectedPath = $false
 if ([string]::IsNullOrWhiteSpace($ExportPath)) {
     $exportTimestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
     $exportBaseDir = $null
 
-    # Fallback-Reihenfolge: C:\temp -> C:\tmp -> Benutzerprofil\Documents
     if (Test-Path "C:\temp" -PathType Container) {
         $exportBaseDir = "C:\temp"
     }
@@ -985,11 +846,9 @@ if ([string]::IsNullOrWhiteSpace($ExportPath)) {
     Write-Host ""
 }
 
-# Validiere Export-Pfad
 $pathValidationError = $null
 
 if ($isAutoDetectedPath) {
-    # Für automatisch ermittelten Pfad: Erlaube Erstellen des Export-Unterverzeichnisses
     if (-not (Test-SafePath -Path $ExportPath -Mode Export -AllowCreate -ErrorMessage ([ref]$pathValidationError))) {
         Write-Host ""
         Write-Host "FEHLER beim Export-Pfad: $pathValidationError" -ForegroundColor Red
@@ -1001,7 +860,6 @@ if ($isAutoDetectedPath) {
     }
 }
 else {
-    # Für benutzerdefinierte Pfade: Strikte Validierung
     if (-not (Test-SafePath -Path $ExportPath -Mode Export -ErrorMessage ([ref]$pathValidationError))) {
         Write-Host ""
         Write-Host "FEHLER beim Export-Pfad: $pathValidationError" -ForegroundColor Red
@@ -1017,7 +875,6 @@ else {
     }
 }
 
-# Export-Verzeichnis erstellen (Validierung bereits erfolgt)
 if (-not (Test-Path $ExportPath)) {
     try {
         New-Item -ItemType Directory -Path $ExportPath -ErrorAction Stop | Out-Null
@@ -1032,7 +889,6 @@ else {
     Write-PlannerLog "Verwende existierendes Export-Verzeichnis: $ExportPath"
 }
 
-# Microsoft.Graph Modul prüfen
 if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Planner)) {
     Write-PlannerLog "Microsoft.Graph Module werden installiert..." "WARN"
     Install-Module Microsoft.Graph -Scope CurrentUser -Force -AllowClobber
@@ -1040,18 +896,15 @@ if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Planner)) {
 
 Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
 
-# Verbinden
 if (-not (Connect-ToGraph)) {
     Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph möglich." "ERROR"
     throw "Abbruch: Keine Verbindung zu Microsoft Graph möglich."
 }
 
-# Pläne laden
 $plans = @()
 $selectedGroups = @()
 
 if ($UseCurrentUser) {
-    # User-basierte Export: Alle Pläne des aktuellen Benutzers
     Write-PlannerLog "Verwende Pläne des aktuellen Benutzers"
     $plans = Get-AllUserPlans
     if ($null -eq $plans) {
@@ -1060,7 +913,6 @@ if ($UseCurrentUser) {
     }
 }
 elseif ($GroupIds) {
-    # Direkte Angabe von Gruppen-IDs
     Write-PlannerLog "Verwende angegebene Gruppen-IDs"
     $plans = Get-PlansByGroupIds -GroupIds $GroupIds
     if ($plans.Count -eq 0) {
@@ -1069,7 +921,6 @@ elseif ($GroupIds) {
     }
 }
 elseif ($GroupNames) {
-    # Suche nach Gruppennamen
     Write-PlannerLog "Suche Gruppen nach Namen"
     $selectedGroups = Get-GroupsByNames -GroupNames $GroupNames
 
@@ -1085,7 +936,6 @@ elseif ($GroupNames) {
     }
 }
 elseif ($Interactive) {
-    # Interaktive Auswahl
     Write-PlannerLog "Starte interaktive Gruppenauswahl"
     $allGroups = Get-AllM365Groups
 
@@ -1108,7 +958,6 @@ elseif ($Interactive) {
     }
 }
 else {
-    # Standardverhalten: Interaktive Auswahl anzeigen
     Write-PlannerLog "Keine Gruppen angegeben. Zeige verfügbare M365-Gruppen..." "WARN"
     Write-Host ""
     Write-Host "HINWEIS: Sie haben keine Gruppen angegeben." -ForegroundColor Yellow
@@ -1152,7 +1001,6 @@ else {
     }
 }
 
-# Finale Validierung der Pläne
 if ($null -eq $plans) {
     Write-PlannerLog "Kritischer Fehler: Plans-Variable ist null" "ERROR"
     exit 1
@@ -1163,7 +1011,6 @@ if ($plans.Count -eq 0) {
     exit 1
 }
 
-# Übersicht anzeigen
 Write-Host ""
 Write-Host "Gefundene Pläne:" -ForegroundColor Yellow
 for ($i = 0; $i -lt $plans.Count; $i++) {
@@ -1172,9 +1019,8 @@ for ($i = 0; $i -lt $plans.Count; $i++) {
 }
 Write-Host ""
 
-# Alle Pläne exportieren
 $exportSummary = @()
-$script:exportedFileNames = @{}   # Dateinamen-Tracking für diesen Lauf (Duplikat-Erkennung)
+$script:exportedFileNames = @{}
 foreach ($plan in $plans) {
     Write-Host ""
     Write-PlannerLog "=== Exportiere Plan: $($plan.title) ===" "OK"
@@ -1187,7 +1033,6 @@ foreach ($plan in $plans) {
     }
 }
 
-# Gesamtübersicht als Index-Datei
 $indexData = @{
     ExportDate    = (Get-Date).ToString("o")
     ExportedBy    = (Get-MgContext).Account
@@ -1203,7 +1048,6 @@ catch {
     throw
 }
 
-# Zusammenfassung
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host "  EXPORT ABGESCHLOSSEN" -ForegroundColor Green
@@ -1226,5 +1070,3 @@ Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
 } finally {
     Stop-Transcript -ErrorAction SilentlyContinue
 }
-
-#endregion
