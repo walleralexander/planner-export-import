@@ -116,12 +116,6 @@ function Write-PlannerLog {
         "OK"    { "Green" }
         default { "White" }
     })
-    try {
-        $logEntry | Out-File -FilePath "$ExportPath\export.log" -Append -Encoding utf8 -ErrorAction Stop
-    }
-    catch {
-        Write-Host "[ERROR] Konnte nicht in Log-Datei schreiben: $_" -ForegroundColor Red
-    }
 }
 
 function Test-SafePath {
@@ -279,13 +273,14 @@ function Connect-ToGraph {
         }
 
         # TenantId + Account: Parameter > Config-Datei
-        $savedAccount = $null
+        # Gespeichertes Konto immer laden (für LoginHint bei Silent-Auth)
+        $cfg = Get-PlannerAuthConfig
+        $savedAccount = if ($cfg) { $cfg.Account } else { $null }
+
         $tid = if (-not [string]::IsNullOrEmpty($TenantId)) {
             $TenantId
         } else {
-            $cfg = Get-PlannerAuthConfig
             if ($cfg -and $cfg.TenantId) {
-                $savedAccount = $cfg.Account
                 Write-PlannerLog "Verwende gespeicherte Anmeldedaten ($($cfg.Account))..."
                 $cfg.TenantId
             } else { $null }
@@ -297,6 +292,7 @@ function Connect-ToGraph {
         if ($tid) {
             try {
                 $silentArgs = @{ TenantId = $tid; Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop'; WarningAction = 'SilentlyContinue' }
+                if ($savedAccount) { $silentArgs['LoginHint'] = $savedAccount }
                 Connect-MgGraph @silentArgs
                 $connected = $true
             } catch {
@@ -335,10 +331,12 @@ function Connect-ToGraph {
                 if ($authChoice -eq 'B') {
                     $connectArgs = @{ Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop' }
                     if ($tid) { $connectArgs['TenantId'] = $tid }
+                    if ($savedAccount) { $connectArgs['LoginHint'] = $savedAccount }
                     Connect-MgGraph @connectArgs
                 } else {
                     $connectArgs = @{ Scopes = $scopes; UseDeviceCode = $true; NoWelcome = $true; ErrorAction = 'Stop' }
                     if ($tid) { $connectArgs['TenantId'] = $tid }
+                    if ($savedAccount) { $connectArgs['LoginHint'] = $savedAccount }
                     Connect-MgGraph @connectArgs
                 }
                 $connected = $true
@@ -934,6 +932,17 @@ function Export-ReadableSummary {
 
 #region Hauptprogramm
 
+# Pro Programmstart eine eigene Log-Datei (ohne Farbcodes)
+$logsDir = Join-Path $PSScriptRoot "logs"
+if (-not (Test-Path $logsDir)) { New-Item -ItemType Directory -Path $logsDir | Out-Null }
+$transcriptPath = Join-Path $logsDir ("export_" + (Get-Date -Format 'yyyyMMdd_HHmmss') + ".log")
+if ($PSVersionTable.PSVersion.Major -ge 7) {
+    $PSStyle.OutputRendering = [System.Management.Automation.OutputRendering]::PlainText
+}
+Start-Transcript -Path $transcriptPath -NoClobber -ErrorAction SilentlyContinue
+
+try {
+
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "  Microsoft Planner Export Tool" -ForegroundColor Cyan
@@ -1196,5 +1205,9 @@ Write-Host ""
 Write-PlannerLog "Export abgeschlossen. $($plans.Count) Pläne mit $totalTasks Tasks exportiert." "OK"
 
 Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+
+} finally {
+    Stop-Transcript -ErrorAction SilentlyContinue
+}
 
 #endregion

@@ -156,17 +156,6 @@ function Write-PlannerLog {
         "DRYRUN" { "Magenta" }
         default  { "White" }
     })
-    try {
-        $logFile = if ([string]::IsNullOrEmpty($ImportPath)) {
-            Join-Path (Get-Location).Path 'import.log'
-        } else {
-            "$ImportPath\import.log"
-        }
-        $logEntry | Out-File -FilePath $logFile -Append -Encoding utf8 -ErrorAction Stop
-    }
-    catch {
-        Write-Host "[ERROR] Konnte nicht in Log-Datei schreiben: $_" -ForegroundColor Red
-    }
 }
 
 function Test-SafePath {
@@ -337,7 +326,7 @@ function Add-ErrorToTracker {
     }
 
     # Add to specific item type failures
-    $itemTypePlural = "$ItemType" + "s"
+    $itemTypePlural = if ($ItemType -eq 'UserResolution') { 'UserResolution' } else { "$ItemType" + "s" }
     $script:errorTracker.$itemTypePlural.Failed += $errorDetails
 
     # Categorize error
@@ -534,6 +523,7 @@ function Invoke-GraphWithRetry {
         [string]$Method,
         [string]$Uri,
         [object]$Body,
+        [hashtable]$Headers,
         [int]$MaxRetries = 3
     )
 
@@ -551,6 +541,10 @@ function Invoke-GraphWithRetry {
             if ($Body) {
                 $params["Body"] = ($Body | ConvertTo-Json -Depth 20)
                 $params["ContentType"] = "application/json"
+            }
+
+            if ($Headers) {
+                $params["Headers"] = $Headers
             }
 
             return Invoke-MgGraphRequest @params
@@ -673,13 +667,14 @@ function Connect-ToGraph {
         }
 
         # TenantId + Account: Parameter > Config-Datei
-        $savedAccount = $null
+        # Gespeichertes Konto immer laden (für LoginHint bei Silent-Auth)
+        $cfg = Get-PlannerAuthConfig
+        $savedAccount = if ($cfg) { $cfg.Account } else { $null }
+
         $tid = if (-not [string]::IsNullOrEmpty($TenantId)) {
             $TenantId
         } else {
-            $cfg = Get-PlannerAuthConfig
             if ($cfg -and $cfg.TenantId) {
-                $savedAccount = $cfg.Account
                 Write-PlannerLog "Verwende gespeicherte Anmeldedaten ($($cfg.Account))..."
                 $cfg.TenantId
             } else { $null }
@@ -691,6 +686,7 @@ function Connect-ToGraph {
         if ($tid) {
             try {
                 $silentArgs = @{ TenantId = $tid; Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop'; WarningAction = 'SilentlyContinue' }
+                if ($savedAccount) { $silentArgs['LoginHint'] = $savedAccount }
                 Connect-MgGraph @silentArgs
                 $connected = $true
             } catch {
@@ -729,10 +725,12 @@ function Connect-ToGraph {
                 if ($authChoice -eq 'B') {
                     $connectArgs = @{ Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop' }
                     if ($tid) { $connectArgs['TenantId'] = $tid }
+                    if ($savedAccount) { $connectArgs['LoginHint'] = $savedAccount }
                     Connect-MgGraph @connectArgs
                 } else {
                     $connectArgs = @{ Scopes = $scopes; UseDeviceCode = $true; NoWelcome = $true; ErrorAction = 'Stop' }
                     if ($tid) { $connectArgs['TenantId'] = $tid }
+                    if ($savedAccount) { $connectArgs['LoginHint'] = $savedAccount }
                     Connect-MgGraph @connectArgs
                 }
                 $connected = $true
@@ -1034,8 +1032,11 @@ function Import-PlanFromJson {
             'ue' {
                 Write-PlannerLog "  Lösche vorhandenen Plan '$planTitle'..." "INFO"
                 try {
-                    Invoke-GraphWithRetry -Method DELETE `
+                    $planToDelete = Invoke-GraphWithRetry -Method GET `
                         -Uri "https://graph.microsoft.com/v1.0/planner/plans/$($existingPlan.id)"
+                    Invoke-GraphWithRetry -Method DELETE `
+                        -Uri "https://graph.microsoft.com/v1.0/planner/plans/$($existingPlan.id)" `
+                        -Headers @{ "If-Match" = $planToDelete.'@odata.etag' }
                     Write-PlannerLog "  Vorhandener Plan gelöscht." "OK"
                     $script:groupPlansCache.Remove($groupId)  # Cache invalidieren
                     # Neu erstellen
@@ -1141,7 +1142,7 @@ function Import-PlanFromJson {
 
     foreach ($task in $planData.Tasks) {
         $taskCounter++
-        Write-Progress -Activity "Importiere Tasks für '$planTitle'" -Status "Task $taskCounter von ${totalTasks}: $($task.title)" -PercentComplete (($taskCounter / $totalTasks) * 100)
+        Write-Progress -Activity "Importiere Tasks für '$planTitle'" -Status "Task $taskCounter von ${totalTasks}: $($task.title)" -PercentComplete (($taskCounter / [Math]::Max(1, $totalTasks)) * 100)
 
         # Abgeschlossene Tasks überspringen wenn gewünscht
         if ($SkipCompletedTasks -and $task.percentComplete -eq 100) {
@@ -1258,9 +1259,8 @@ function Import-PlanFromJson {
                             alias         = $_.Value.alias
                             type          = $_.Value.type
                         }
-                        if ($_.Value.previewPriority) {
-                            $references[$url]["previewPriority"] = $_.Value.previewPriority
-                        }
+                        # previewPriority absichtlich nicht übernehmen: exportierte Werte
+                        # sind mandantenspezifische orderHints und im Ziel-Tenant ungültig
                     }
                     if ($references.Count -gt 0) {
                         $detailBody["references"] = $references
@@ -1486,6 +1486,17 @@ function Show-ExportSelectionMenu {
 #endregion
 
 #region Hauptprogramm
+
+# Pro Programmstart eine eigene Log-Datei (ohne Farbcodes)
+$logsDir = Join-Path $PSScriptRoot "logs"
+if (-not (Test-Path $logsDir)) { New-Item -ItemType Directory -Path $logsDir | Out-Null }
+$transcriptPath = Join-Path $logsDir ("import_" + (Get-Date -Format 'yyyyMMdd_HHmmss') + ".log")
+if ($PSVersionTable.PSVersion.Major -ge 7) {
+    $PSStyle.OutputRendering = [System.Management.Automation.OutputRendering]::PlainText
+}
+Start-Transcript -Path $transcriptPath -NoClobber -ErrorAction SilentlyContinue
+
+try {
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
@@ -1778,5 +1789,9 @@ Write-PlannerLog "Import abgeschlossen mit Exit-Code: $exitCode"
 Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
 
 exit $exitCode
+
+} finally {
+    Stop-Transcript -ErrorAction SilentlyContinue
+}
 
 #endregion
