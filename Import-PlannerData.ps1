@@ -140,6 +140,8 @@ $script:errorTracker = @{
 }
 
 $script:userResolveCache = @{}
+$script:groupPlansCache = @{}         # Cache: GroupId -> Array bestehender Pläne
+$script:existingPlanDefaultAction = $null  # 'u'=überspringen, 'ue'=überschreiben, 'v'=verwenden (für alle)
 
 #region Funktionen
 
@@ -306,7 +308,17 @@ function Add-ErrorToTracker {
         ItemName = $ItemName
         Context = $Context
         Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        Message = if ($Exception) { $Exception.Message } else { "Unbekannter Fehler" }
+        Message = if ($Exception) {
+            # Versuche den detaillierten Fehlertext zu extrahieren
+            $msg = ''
+            if ($Exception.PSObject.Properties['Exception'] -and $Exception.Exception) {
+                $msg = $Exception.Exception.Message
+            }
+            if (-not $msg) { $msg = $Exception.Message }
+            # Aus JSON-Body den 'message'-Wert extrahieren wenn vorhanden
+            if ($msg -match '"message"\s*:\s*"([^"]+)"') { $msg = $Matches[1] }
+            if ($msg) { $msg } else { "Unbekannter Fehler" }
+        } else { "Unbekannter Fehler" }
         ExceptionType = if ($Exception) { $Exception.GetType().FullName } else { "N/A" }
     }
 
@@ -329,7 +341,7 @@ function Add-ErrorToTracker {
     $script:errorTracker.$itemTypePlural.Failed += $errorDetails
 
     # Categorize error
-    $errorMessage = $errorDetails.Message.ToLower()
+    $errorMessage = if ($errorDetails.Message) { $errorDetails.Message.ToLower() } else { '' }
     $statusCode = $errorDetails.StatusCode
 
     if ($statusCode -in @(408, 500, 502, 503, 504, "N/A") -or
@@ -469,6 +481,51 @@ function Write-CacheStatistics {
         Write-PlannerLog "  Cache-Misses:       $cacheMisses" "INFO"
         Write-PlannerLog "  Trefferquote:       $hitRate%" "INFO"
         Write-PlannerLog "  Eingesparte API-Calls (geschätzt): $apiCallsSaved" "OK"
+    }
+}
+
+function ConvertTo-IsoDate {
+    <#
+    .SYNOPSIS
+        Konvertiert ein Datum in ISO 8601 Format für die Graph API.
+        Unterstützt /Date(ms)/-Format (OData v3), DateTime-Objekte und ISO-Strings.
+    #>
+    param([object]$Value)
+    if (-not $Value) { return $null }
+    $str = $Value.ToString().Trim()
+    # OData v3: /Date(1769554800000)/ or /Date(1769554800000+0000)/
+    if ($str -match '^/Date\((\d+)') {
+        $ms = [long]$Matches[1]
+        return [DateTimeOffset]::FromUnixTimeMilliseconds($ms).UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    }
+    # Bereits ein DateTime-Objekt oder ISO-String
+    try {
+        return ([datetime]$str).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-ExistingPlansForGroup {
+    <#
+    .SYNOPSIS
+        Ruft alle vorhandenen Planner-Pläne einer M365-Gruppe ab (mit Caching).
+    #>
+    param([string]$GroupId)
+    if ($script:groupPlansCache.ContainsKey($GroupId)) {
+        return $script:groupPlansCache[$GroupId]
+    }
+    try {
+        $response = Invoke-GraphWithRetry -Method GET `
+            -Uri "https://graph.microsoft.com/v1.0/groups/$GroupId/planner/plans"
+        $plans = if ($response -and $response.value) { @($response.value) } else { @() }
+        $script:groupPlansCache[$GroupId] = $plans
+        return $plans
+    }
+    catch {
+        Write-PlannerLog "Konnte bestehende Pläne für Gruppe $GroupId nicht abrufen: $_" "WARN"
+        return @()
     }
 }
 
@@ -615,13 +672,15 @@ function Connect-ToGraph {
             return $true
         }
 
-        # TenantId: Parameter > Config-Datei
+        # TenantId + Account: Parameter > Config-Datei
+        $savedAccount = $null
         $tid = if (-not [string]::IsNullOrEmpty($TenantId)) {
             $TenantId
         } else {
             $cfg = Get-PlannerAuthConfig
             if ($cfg -and $cfg.TenantId) {
-                Write-PlannerLog "Verwende gespeicherte TenantId ($($cfg.TenantId)) für automatische Anmeldung..."
+                $savedAccount = $cfg.Account
+                Write-PlannerLog "Verwende gespeicherte Anmeldedaten ($($cfg.Account))..."
                 $cfg.TenantId
             } else { $null }
         }
@@ -631,7 +690,8 @@ function Connect-ToGraph {
         # 1. Versuch: Silent-Auth via MSAL-Cache (nur wenn TenantId bekannt)
         if ($tid) {
             try {
-                Connect-MgGraph -TenantId $tid -Scopes $scopes -NoWelcome -ErrorAction Stop
+                $silentArgs = @{ TenantId = $tid; Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop'; WarningAction = 'SilentlyContinue' }
+                Connect-MgGraph @silentArgs
                 $connected = $true
             } catch {
                 $errMsg = $_.Exception.Message
@@ -648,16 +708,33 @@ function Connect-ToGraph {
                     Write-Host ""
                     exit 1
                 }
-                Write-PlannerLog "Silent-Auth fehlgeschlagen, versuche interaktive Anmeldung..." "WARN"
+                Write-PlannerLog "Silent-Auth fehlgeschlagen, Anmeldung erforderlich..." "WARN"
             }
         }
 
-        # 2. Versuch: Interaktive Browser-Anmeldung
+        # 2. Interaktive Anmeldung: Benutzer wählt Browser oder Device Code
         if (-not $connected) {
+            Write-Host ""
+            Write-Host "  Anmeldung erforderlich" -ForegroundColor Yellow
+            if ($savedAccount) { Write-Host "  Konto: $savedAccount" -ForegroundColor Gray }
+            Write-Host ""
+            Write-Host "  [B] Browser-Anmeldung  (öffnet Browserfenster)" -ForegroundColor Cyan
+            Write-Host "  [D] Device Code        (Code im Browser eingeben) [Standard]" -ForegroundColor Cyan
+            Write-Host ""
+            $authChoice = (Read-Host "  Auswahl [B/D]").Trim().ToUpper()
+            if ([string]::IsNullOrEmpty($authChoice)) { $authChoice = 'D' }
+            Write-Host ""
+
             try {
-                $connectArgs = @{ Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop' }
-                if ($tid) { $connectArgs['TenantId'] = $tid }
-                Connect-MgGraph @connectArgs
+                if ($authChoice -eq 'B') {
+                    $connectArgs = @{ Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop' }
+                    if ($tid) { $connectArgs['TenantId'] = $tid }
+                    Connect-MgGraph @connectArgs
+                } else {
+                    $connectArgs = @{ Scopes = $scopes; UseDeviceCode = $true; NoWelcome = $true; ErrorAction = 'Stop' }
+                    if ($tid) { $connectArgs['TenantId'] = $tid }
+                    Connect-MgGraph @connectArgs
+                }
                 $connected = $true
             } catch {
                 $errMsg = $_.Exception.Message
@@ -674,12 +751,7 @@ function Connect-ToGraph {
                     Write-Host ""
                     exit 1
                 }
-                # 3. Fallback: Device Code Flow
-                Write-PlannerLog "Browser-Authentifizierung fehlgeschlagen, verwende Device Code Flow..." "WARN"
-                $connectArgs2 = @{ Scopes = $scopes; UseDeviceCode = $true; NoWelcome = $true; ErrorAction = 'Stop' }
-                if ($tid) { $connectArgs2['TenantId'] = $tid }
-                Connect-MgGraph @connectArgs2
-                $connected = $true
+                throw
             }
         }
 
@@ -924,21 +996,86 @@ function Import-PlanFromJson {
         }
     }
 
-    # 1. Plan erstellen
+    # 1. Plan erstellen (oder vorhandenen verwenden/überschreiben)
     $script:errorTracker.Plans.Attempted++
 
-    try {
-        $newPlan = Invoke-GraphWithRetry -Method POST -Uri "https://graph.microsoft.com/v1.0/planner/plans" -Body @{
-            owner = $groupId
-            title = $planTitle
+    # Prüfen ob Plan mit gleichem Titel bereits in Zielgruppe existiert
+    $existingPlan = Get-ExistingPlansForGroup -GroupId $groupId |
+        Where-Object { $_.title -eq $planTitle } | Select-Object -First 1
+
+    $newPlan = $null
+    if ($existingPlan) {
+        Write-PlannerLog "  Plan '$planTitle' existiert bereits (ID: $($existingPlan.id))" "WARN"
+
+        # Aktion bestimmen: aus Cache oder interaktiv fragen
+        $action = $script:existingPlanDefaultAction
+        if (-not $action) {
+            Write-Host ""
+            Write-Host "  ╔══════════════════════════════════════════════════════════╗" -ForegroundColor Yellow
+            Write-Host "  ║  Plan bereits vorhanden: '$planTitle'" -ForegroundColor Yellow
+            Write-Host "  ╚══════════════════════════════════════════════════════════╝" -ForegroundColor Yellow
+            Write-Host "  Vorhandener Plan-ID: $($existingPlan.id)" -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "  [v] Verwenden      - Buckets/Tasks in vorhandenen Plan importieren" -ForegroundColor Cyan
+            Write-Host "  [ue] Überschreiben - Vorhandenen Plan LÖSCHEN und neu erstellen" -ForegroundColor Red
+            Write-Host "  [u] Überspringen   - Diesen Plan nicht importieren" -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "  Für alle weiteren Konflikte: Eingabe + 'a' (z.B. 'va', 'uea', 'ua')" -ForegroundColor DarkGray
+            Write-Host ""
+            $choice = (Read-Host "  Auswahl").Trim().ToLower()
+
+            if ($choice -match 'a$') {
+                $script:existingPlanDefaultAction = $choice -replace 'a$', ''
+            }
+            $action = $choice -replace 'a$', ''
         }
-        Write-PlannerLog "  Plan erstellt: $($newPlan.id)" "OK"
-        $script:errorTracker.Plans.Succeeded++
+
+        switch ($action) {
+            'ue' {
+                Write-PlannerLog "  Lösche vorhandenen Plan '$planTitle'..." "INFO"
+                try {
+                    Invoke-GraphWithRetry -Method DELETE `
+                        -Uri "https://graph.microsoft.com/v1.0/planner/plans/$($existingPlan.id)"
+                    Write-PlannerLog "  Vorhandener Plan gelöscht." "OK"
+                    $script:groupPlansCache.Remove($groupId)  # Cache invalidieren
+                    # Neu erstellen
+                    $newPlan = Invoke-GraphWithRetry -Method POST `
+                        -Uri "https://graph.microsoft.com/v1.0/planner/plans" `
+                        -Body @{ owner = $groupId; title = $planTitle }
+                    Write-PlannerLog "  Plan neu erstellt: $($newPlan.id)" "OK"
+                    $script:errorTracker.Plans.Succeeded++
+                }
+                catch {
+                    Add-ErrorToTracker -ItemType "Plan" -ItemName $planTitle -Exception $_ -Context "Überschreiben des Plans"
+                    Write-PlannerLog "Kritischer Fehler beim Überschreiben des Plans: $_" "ERROR"
+                    return $null
+                }
+            }
+            'v' {
+                Write-PlannerLog "  Verwende vorhandenen Plan: $($existingPlan.id)" "OK"
+                $newPlan = $existingPlan
+                $script:errorTracker.Plans.Succeeded++
+            }
+            default {
+                Write-PlannerLog "  Plan '$planTitle' wird übersprungen." "WARN"
+                return $null
+            }
+        }
     }
-    catch {
-        Add-ErrorToTracker -ItemType "Plan" -ItemName $planTitle -Exception $_ -Context "Erstellen des Plans"
-        Write-PlannerLog "Kritischer Fehler: Plan konnte nicht erstellt werden: $_" "ERROR"
-        return $null
+    else {
+        # Kein vorhandener Plan - normal erstellen
+        try {
+            $newPlan = Invoke-GraphWithRetry -Method POST `
+                -Uri "https://graph.microsoft.com/v1.0/planner/plans" `
+                -Body @{ owner = $groupId; title = $planTitle }
+            Write-PlannerLog "  Plan erstellt: $($newPlan.id)" "OK"
+            $script:errorTracker.Plans.Succeeded++
+        }
+        catch {
+            Add-ErrorToTracker -ItemType "Plan" -ItemName $planTitle -Exception $_ -Context "Erstellen des Plans"
+            Write-PlannerLog "Kritischer Fehler: Plan konnte nicht erstellt werden: $_" "ERROR"
+            return $null
+        }
     }
 
     # 2. Kategorien/Labels setzen
@@ -1033,11 +1170,13 @@ function Import-PlanFromJson {
         }
 
         if ($task.dueDateTime) {
-            $taskBody["dueDateTime"] = $task.dueDateTime
+            $converted = ConvertTo-IsoDate $task.dueDateTime
+            if ($converted) { $taskBody["dueDateTime"] = $converted }
         }
 
         if ($task.startDateTime) {
-            $taskBody["startDateTime"] = $task.startDateTime
+            $converted = ConvertTo-IsoDate $task.startDateTime
+            if ($converted) { $taskBody["startDateTime"] = $converted }
         }
 
         # Labels/Kategorien
@@ -1486,11 +1625,11 @@ if ($ListGroups) {
     $maxLen = ($groups | ForEach-Object { $_.DisplayName.Length } | Measure-Object -Maximum).Maximum
     $maxLen = [Math]::Max($maxLen, 20)
 
-    Write-Host ('  {0,-' + $maxLen + '}  {1,-38}  {2}') -f 'Gruppenname', 'Gruppen-ID', 'E-Mail' -ForegroundColor Yellow
-    Write-Host ('  {0}  {1}  {2}') -f ('-' * $maxLen), ('-' * 38), ('-' * 40) -ForegroundColor DarkGray
+    Write-Host (('  {0,-' + $maxLen + '}  {1,-38}  {2}') -f 'Gruppenname', 'Gruppen-ID', 'E-Mail') -ForegroundColor Yellow
+    Write-Host (('  {0}  {1}  {2}') -f ('-' * $maxLen), ('-' * 38), ('-' * 40)) -ForegroundColor DarkGray
 
     foreach ($g in $groups) {
-        Write-Host ('  {0,-' + $maxLen + '}  {1,-38}  {2}') -f $g.DisplayName, $g.Id, $g.Mail
+        Write-Host (('  {0,-' + $maxLen + '}  {1,-38}  {2}') -f $g.DisplayName, $g.Id, $g.Mail)
     }
 
     Write-Host ''
@@ -1525,7 +1664,7 @@ if (Test-Path $indexPath) {
 
 # JSON-Dateien finden
 $jsonFiles = Get-ChildItem -Path $ImportPath -Filter "*.json" |
-    Where-Object { $_.Name -ne "_ExportIndex.json" -and $_.Name -notmatch "ImportMapping" }
+    Where-Object { $_.Name -ne "_ExportIndex.json" -and $_.Name -notmatch "ImportMapping" -and $_.Name -ne "import_errors.json" }
 
 if ($jsonFiles.Count -eq 0) {
     Write-PlannerLog "Keine Export-Dateien gefunden in: $ImportPath" "ERROR"

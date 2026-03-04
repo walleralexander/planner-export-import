@@ -278,13 +278,15 @@ function Connect-ToGraph {
             return $true
         }
 
-        # TenantId: Parameter > Config-Datei
+        # TenantId + Account: Parameter > Config-Datei
+        $savedAccount = $null
         $tid = if (-not [string]::IsNullOrEmpty($TenantId)) {
             $TenantId
         } else {
             $cfg = Get-PlannerAuthConfig
             if ($cfg -and $cfg.TenantId) {
-                Write-PlannerLog "Verwende gespeicherte TenantId ($($cfg.TenantId)) für automatische Anmeldung..."
+                $savedAccount = $cfg.Account
+                Write-PlannerLog "Verwende gespeicherte Anmeldedaten ($($cfg.Account))..."
                 $cfg.TenantId
             } else { $null }
         }
@@ -294,7 +296,8 @@ function Connect-ToGraph {
         # 1. Versuch: Silent-Auth via MSAL-Cache (nur wenn TenantId bekannt)
         if ($tid) {
             try {
-                Connect-MgGraph -TenantId $tid -Scopes $scopes -NoWelcome -ErrorAction Stop
+                $silentArgs = @{ TenantId = $tid; Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop'; WarningAction = 'SilentlyContinue' }
+                Connect-MgGraph @silentArgs
                 $connected = $true
             } catch {
                 $errMsg = $_.Exception.Message
@@ -311,16 +314,33 @@ function Connect-ToGraph {
                     Write-Host ""
                     exit 1
                 }
-                Write-PlannerLog "Silent-Auth fehlgeschlagen, versuche interaktive Anmeldung..." "WARN"
+                Write-PlannerLog "Silent-Auth fehlgeschlagen, Anmeldung erforderlich..." "WARN"
             }
         }
 
-        # 2. Versuch: Interaktive Browser-Anmeldung
+        # 2. Interaktive Anmeldung: Benutzer wählt Browser oder Device Code
         if (-not $connected) {
+            Write-Host ""
+            Write-Host "  Anmeldung erforderlich" -ForegroundColor Yellow
+            if ($savedAccount) { Write-Host "  Konto: $savedAccount" -ForegroundColor Gray }
+            Write-Host ""
+            Write-Host "  [B] Browser-Anmeldung  (öffnet Browserfenster)" -ForegroundColor Cyan
+            Write-Host "  [D] Device Code        (Code im Browser eingeben) [Standard]" -ForegroundColor Cyan
+            Write-Host ""
+            $authChoice = (Read-Host "  Auswahl [B/D]").Trim().ToUpper()
+            if ([string]::IsNullOrEmpty($authChoice)) { $authChoice = 'D' }
+            Write-Host ""
+
             try {
-                $connectArgs = @{ Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop' }
-                if ($tid) { $connectArgs['TenantId'] = $tid }
-                Connect-MgGraph @connectArgs
+                if ($authChoice -eq 'B') {
+                    $connectArgs = @{ Scopes = $scopes; NoWelcome = $true; ErrorAction = 'Stop' }
+                    if ($tid) { $connectArgs['TenantId'] = $tid }
+                    Connect-MgGraph @connectArgs
+                } else {
+                    $connectArgs = @{ Scopes = $scopes; UseDeviceCode = $true; NoWelcome = $true; ErrorAction = 'Stop' }
+                    if ($tid) { $connectArgs['TenantId'] = $tid }
+                    Connect-MgGraph @connectArgs
+                }
                 $connected = $true
             } catch {
                 $errMsg = $_.Exception.Message
@@ -337,12 +357,7 @@ function Connect-ToGraph {
                     Write-Host ""
                     exit 1
                 }
-                # 3. Fallback: Device Code Flow
-                Write-PlannerLog "Browser-Authentifizierung fehlgeschlagen, verwende Device Code Flow..." "WARN"
-                $connectArgs2 = @{ Scopes = $scopes; UseDeviceCode = $true; NoWelcome = $true; ErrorAction = 'Stop' }
-                if ($tid) { $connectArgs2['TenantId'] = $tid }
-                Connect-MgGraph @connectArgs2
-                $connected = $true
+                throw
             }
         }
 
