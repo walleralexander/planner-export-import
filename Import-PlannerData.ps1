@@ -544,6 +544,41 @@ function Connect-ToGraph {
     }
 }
 
+function Test-TargetGroup {
+    param([string]$GroupId)
+
+    if ([string]::IsNullOrEmpty($GroupId)) {
+        return $true  # Keine Zielgruppe angegeben, wird später aus JSON ermittelt
+    }
+
+    Write-PlannerLog "Validiere Zielgruppe: $GroupId"
+    try {
+        $group = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/groups/$GroupId" -ErrorAction Stop
+        Write-PlannerLog "  Gruppe gefunden: $($group.displayName)" "OK"
+        Write-PlannerLog "  Gruppentyp: $($group.groupTypes -join ', ')" "OK"
+
+        # Prüfe ob es eine M365-Gruppe ist (Unified)
+        if ($group.groupTypes -notcontains "Unified") {
+            Write-PlannerLog "  WARNUNG: Gruppe ist keine Microsoft 365 Gruppe. Planner benötigt M365-Gruppen." "WARN"
+            return $false
+        }
+
+        return $true
+    }
+    catch {
+        if ($_.Exception.Message -like "*404*" -or $_.Exception.Message -like "*does not exist*" -or $_.Exception.Message -like "*not found*") {
+            Write-PlannerLog "  Gruppe existiert nicht: $GroupId" "ERROR"
+        }
+        elseif ($_.Exception.Message -like "*403*" -or $_.Exception.Message -like "*Forbidden*") {
+            Write-PlannerLog "  Keine Berechtigung zum Zugriff auf Gruppe: $GroupId" "ERROR"
+        }
+        else {
+            Write-PlannerLog "  Fehler beim Validieren der Gruppe: $_" "ERROR"
+        }
+        return $false
+    }
+}
+
 function Resolve-UserId {
     param([string]$OldUserId, [hashtable]$OldUserMap)
 
@@ -683,10 +718,38 @@ function Import-PlanFromJson {
     Write-PlannerLog "Erstelle Plan '$planTitle' in Gruppe $groupId..."
 
     if ($DryRun) {
+        # Validiere Zielgruppe im DryRun
+        if (-not (Test-TargetGroup -GroupId $groupId)) {
+            Write-PlannerLog "[DRY RUN] FEHLER: Zielgruppe $groupId ist ungültig" "ERROR"
+            return $null
+        }
+
         Write-PlannerLog "[DRY RUN] Würde Plan '$planTitle' erstellen" "DRYRUN"
+        Write-PlannerLog "[DRY RUN] Zielgruppe: $groupId" "DRYRUN"
         Write-PlannerLog "[DRY RUN] Buckets: $($planData.Buckets.Count)" "DRYRUN"
         Write-PlannerLog "[DRY RUN] Tasks: $($planData.Tasks.Count)" "DRYRUN"
-        return
+
+        if (-not $SkipCompletedTasks) {
+            $completedTasks = ($planData.Tasks | Where-Object { $_.percentComplete -eq 100 }).Count
+            if ($completedTasks -gt 0) {
+                Write-PlannerLog "[DRY RUN]   davon abgeschlossen: $completedTasks" "DRYRUN"
+            }
+        }
+
+        if (-not $SkipAssignments) {
+            $tasksWithAssignments = ($planData.Tasks | Where-Object { $_.assignments -and $_.assignments.PSObject.Properties.Count -gt 0 }).Count
+            if ($tasksWithAssignments -gt 0) {
+                Write-PlannerLog "[DRY RUN]   Tasks mit Zuweisungen: $tasksWithAssignments" "DRYRUN"
+            }
+        }
+
+        return @{
+            Status = "DryRun"
+            PlanTitle = $planTitle
+            TargetGroupId = $groupId
+            BucketsCreated = $planData.Buckets.Count
+            TasksCreated = $planData.Tasks.Count
+        }
     }
 
     # 1. Plan erstellen
@@ -1013,11 +1076,20 @@ if (-not $DryRun) {
 # Microsoft Graph Module und Verbindung
 Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
 
-if (-not $DryRun) {
-    if (-not (Connect-ToGraph)) {
-        Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph möglich." "ERROR"
+# Verbindung auch im DryRun herstellen für Validierung
+if (-not (Connect-ToGraph)) {
+    Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph möglich." "ERROR"
+    exit 1
+}
+
+# Validiere Zielgruppe wenn angegeben
+if ($TargetGroupId) {
+    Write-Host ""
+    if (-not (Test-TargetGroup -GroupId $TargetGroupId)) {
+        Write-PlannerLog "Abbruch: Zielgruppe ist ungültig oder nicht zugreifbar." "ERROR"
         exit 1
     }
+    Write-Host ""
 }
 
 # Import durchführen
@@ -1042,6 +1114,24 @@ Write-Host ""
 if ($DryRun) {
     Write-Host "  *** Dies war ein DRY RUN - keine Änderungen wurden vorgenommen ***" -ForegroundColor Magenta
     Write-Host ""
+    
+    # DryRun summary
+    $validResults = $importResults | Where-Object { $_.Status -eq "DryRun" }
+    if ($validResults.Count -gt 0) {
+        $totalTasksToImport = ($validResults | Measure-Object -Property TasksCreated -Sum).Sum
+        $totalBucketsToImport = ($validResults | Measure-Object -Property BucketsCreated -Sum).Sum
+        Write-Host "  Würde importieren:" -ForegroundColor White
+        Write-Host "    Pläne:    $($validResults.Count)" -ForegroundColor Cyan
+        Write-Host "    Buckets:  $totalBucketsToImport" -ForegroundColor Cyan
+        Write-Host "    Tasks:    $totalTasksToImport" -ForegroundColor Cyan
+        Write-Host ""
+    }
+    
+    $failedValidations = $importResults | Where-Object { $null -eq $_.Status -or $_.Status -ne "DryRun" }
+    if ($failedValidations.Count -gt 0) {
+        Write-Host "  Validierungsfehler bei $($failedValidations.Count) Plan(en)" -ForegroundColor Yellow
+        Write-Host ""
+    }
 }
 else {
     # Success summary
