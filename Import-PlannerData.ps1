@@ -508,15 +508,16 @@ function ConvertTo-IsoDate {
     }
 }
 
-function Get-OrCreateWarningCategory {
+function Get-OrCreateCategory {
     <#
     .SYNOPSIS
-        Findet einen freien Kategorie-Slot im Plan und legt eine "⚠ Import-Fehler"-Kategorie an.
+        Findet einen freien Kategorie-Slot im Plan und legt eine Kategorie mit wählbarem Namen an.
         Gibt den Kategorie-Schlüssel zurück (z.B. "category25"), oder $null bei Fehler.
     #>
     param(
         [string]$PlanId,
-        [object]$ExistingCategories
+        [object]$ExistingCategories,
+        [string]$CategoryName
     )
     # Bereits verwendete Slots bestimmen
     $usedSlots = @{}
@@ -546,7 +547,7 @@ function Get-OrCreateWarningCategory {
         
         # Hashtable explizit aufbauen (Variable als Key)
         $bodyObj = @{ categoryDescriptions = @{} }
-        $bodyObj.categoryDescriptions[$freeSlot] = "⚠ Import-Fehler"
+        $bodyObj.categoryDescriptions[$freeSlot] = $CategoryName
         
         # JSON-Body erstellen
         $jsonBody = $bodyObj | ConvertTo-Json -Depth 5 -Compress
@@ -560,7 +561,7 @@ function Get-OrCreateWarningCategory {
             OutputType  = "PSObject"
         }
         Invoke-MgGraphRequest @patchParams
-        Write-PlannerLog "  Warn-Label erstellt in Slot '$freeSlot'" "OK"
+        Write-PlannerLog "  Kategorie '$CategoryName' erstellt in Slot '$freeSlot'" "OK"
         return $freeSlot
     }
     catch {
@@ -1249,8 +1250,12 @@ function Import-PlanFromJson {
     $taskMapping = @{}
     $taskCounter = 0
     $totalTasks = $planData.Tasks.Count
-    $warningCategoryKey = $null      # wird bei erstem Problem lazy initialisiert
-    $warningCategoryResolved = $false
+    
+    # Lazy-initialisierte Variablen für Kategorien
+    $missingUserCategoryResolved = $false
+    $missingUserCategoryKey = $null
+    $attachmentCategoryResolved = $false
+    $attachmentCategoryKey = $null
 
     # UserMap als Hashtable aufbereiten
     $userMap = @{}
@@ -1262,7 +1267,13 @@ function Import-PlanFromJson {
 
     foreach ($task in $planData.Tasks) {
         $taskCounter++
+        
+        # Task-spezifische Tracking-Flags
         $taskHasIssues = $false
+        $taskHasMissingUsers = $false
+        $taskHasAttachments = $false
+        $newTask = $null
+        
         Write-Progress -Activity "Importiere Tasks für '$planTitle'" -Status "Task $taskCounter von ${totalTasks}: $($task.title)" -PercentComplete (($taskCounter / [Math]::Max(1, $totalTasks)) * 100)
 
         # Abgeschlossene Tasks überspringen wenn gewünscht
@@ -1329,7 +1340,7 @@ function Import-PlanFromJson {
                     $userName = if ($userMap[$_.Name]) { $userMap[$_.Name].DisplayName } else { $_.Name }
                     $userUPN = if ($userMap[$_.Name]) { $userMap[$_.Name].UserPrincipalName } else { 'Unbekannt' }
                     Write-PlannerLog "    Benutzer konnte nicht zugewiesen werden: $userName" "WARN"
-                    $taskHasIssues = $true
+                    $taskHasMissingUsers = $true
                     
                     # Für späteres Reporting sammeln
                     $missingUsers.Add([PSCustomObject]@{
@@ -1403,16 +1414,8 @@ function Import-PlanFromJson {
                     if ($references.Count -gt 0) {
                         $detailBody["references"] = $references
                         $hasDetails = $true
-                        
-                        # Hinweis in Description einfügen, wenn Dateianhänge vorhanden sind
-                        $attachmentHint = "`n`n⚠️ HINWEIS: Dieser Task hatte $refCount verknüpfte(s) Dokument(e)/Link(s) im Original. Bitte prüfen und ggf. aktualisieren."
-                        if ($detailBody.ContainsKey("description")) {
-                            $detailBody["description"] = $detailBody["description"] + $attachmentHint
-                        } else {
-                            $detailBody["description"] = $attachmentHint.TrimStart()
-                            $detailBody["previewType"] = "description"
-                        }
-                        Write-PlannerLog "    ℹ Task hat $refCount Referenz(en) - Hinweis zur Description hinzugefügt" "INFO"
+                        $taskHasAttachments = $true
+                        Write-PlannerLog "    ℹ Task hat $refCount Referenz(en) - Kategorie 'Dateianhang' wird gesetzt" "INFO"
                     }
                 }
 
@@ -1441,58 +1444,70 @@ function Import-PlanFromJson {
                 }
             }
 
-            # Warn-Label setzen wenn es Probleme gab
-            if ($taskHasIssues) {
-                # Warn-Kategorie lazy initialisieren (nur beim ersten Problem)
-                if (-not $warningCategoryResolved) {
-                    $warningCategoryResolved = $true
-                    $result = Get-OrCreateWarningCategory -PlanId $newPlan.id -ExistingCategories $planData.Categories
-                    # Sicherstellen, dass Rückgabewert ein String ist (PowerShell kann Arrays erzeugen)
+            # Kategorien setzen basierend auf Task-Status
+            $categoriesToApply = @()
+            
+            # "Person fehlt" Kategorie
+            if ($taskHasMissingUsers) {
+                if (-not $missingUserCategoryResolved) {
+                    $missingUserCategoryResolved = $true
+                    $result = Get-OrCreateCategory -PlanId $newPlan.id -ExistingCategories $planData.Categories -CategoryName "Person fehlt"
                     if ($result) {
-                        $warningCategoryKey = [string]($result | Select-Object -First 1)
+                        $missingUserCategoryKey = [string]($result | Select-Object -First 1)
                     } else {
-                        $warningCategoryKey = $null
+                        $missingUserCategoryKey = $null
                     }
                 }
-                if ($warningCategoryKey) {
-                    try {
-                        $taskForEtag = Invoke-GraphWithRetry -Method GET -Uri "https://graph.microsoft.com/v1.0/planner/tasks/$($newTask.id)"
-                        
-                        # Sicherstellen, dass CategoryKey definitiv ein String ist
-                        $categoryKeyString = [string]$warningCategoryKey
-                        
-                        # Hashtable explizit aufbauen (Variable als Key)
-                        $bodyObj = @{ appliedCategories = @{} }
+                if ($missingUserCategoryKey) {
+                    $categoriesToApply += $missingUserCategoryKey
+                }
+            }
+            
+            # "Dateianhang" Kategorie
+            if ($taskHasAttachments) {
+                if (-not $attachmentCategoryResolved) {
+                    $attachmentCategoryResolved = $true
+                    $result = Get-OrCreateCategory -PlanId $newPlan.id -ExistingCategories $planData.Categories -CategoryName "Dateianhang"
+                    if ($result) {
+                        $attachmentCategoryKey = [string]($result | Select-Object -First 1)
+                    } else {
+                        $attachmentCategoryKey = $null
+                    }
+                }
+                if ($attachmentCategoryKey) {
+                    $categoriesToApply += $attachmentCategoryKey
+                }
+            }
+            
+            # Kategorien anwenden
+            if ($categoriesToApply.Count -gt 0) {
+                try {
+                    $taskForEtag = Invoke-GraphWithRetry -Method GET -Uri "https://graph.microsoft.com/v1.0/planner/tasks/$($newTask.id)"
+                    
+                    # Hashtable explizit aufbauen für alle Kategorien
+                    $bodyObj = @{ appliedCategories = @{} }
+                    foreach ($catKey in $categoriesToApply) {
+                        $categoryKeyString = [string]$catKey
                         $bodyObj.appliedCategories[$categoryKeyString] = $true
-                        
-                        # JSON-Body erstellen
-                        $jsonBody = $bodyObj | ConvertTo-Json -Depth 5 -Compress
-                        
-                        $warnParams = @{
-                            Method      = "PATCH"
-                            Uri         = "https://graph.microsoft.com/v1.0/planner/tasks/$($newTask.id)"
-                            Body        = $jsonBody
-                            ContentType = "application/json"
-                            Headers     = @{ "If-Match" = $taskForEtag.'@odata.etag' }
-                            OutputType  = "PSObject"
-                        }
-                        Invoke-MgGraphRequest @warnParams
-                        Write-PlannerLog "    Warn-Label gesetzt für: $($task.title)" "WARN"
                     }
-                    catch {
-                        Write-PlannerLog "    [DEBUG] Warn-Label Fehler Details:" "WARN"
-                        Write-PlannerLog "      - CategoryKey Original: '$warningCategoryKey' (Typ: $($warningCategoryKey.GetType().Name))" "WARN"
-                        Write-PlannerLog "      - CategoryKey String: '$categoryKeyString' (Typ: $($categoryKeyString.GetType().Name))" "WARN"
-                        Write-PlannerLog "      - BodyObj.appliedCategories Keys: $($bodyObj.appliedCategories.Keys -join ', ')" "WARN"
-                        Write-PlannerLog "      - BodyObj Typ: $($bodyObj.GetType().Name)" "WARN"
-                        Write-PlannerLog "      - BodyObj.appliedCategories Typ: $($bodyObj.appliedCategories.GetType().Name)" "WARN"
-                        Write-PlannerLog "      - JSON Body: $jsonBody" "WARN"
-                        Write-PlannerLog "      - Fehlermeldung: $_" "WARN"
-                        Write-PlannerLog "      - Exception Typ: $($_.Exception.GetType().FullName)" "WARN"
-                        if ($_.Exception.InnerException) {
-                            Write-PlannerLog "      - Inner Exception: $($_.Exception.InnerException.Message)" "WARN"
-                        }
+                    
+                    # JSON-Body erstellen
+                    $jsonBody = $bodyObj | ConvertTo-Json -Depth 5 -Compress
+                    
+                    $warnParams = @{
+                        Method      = "PATCH"
+                        Uri         = "https://graph.microsoft.com/v1.0/planner/tasks/$($newTask.id)"
+                        Body        = $jsonBody
+                        ContentType = "application/json"
+                        Headers     = @{ "If-Match" = $taskForEtag.'@odata.etag' }
+                        OutputType  = "PSObject"
                     }
+                    Invoke-MgGraphRequest @warnParams
+                    $categoryNames = $categoriesToApply -join ", "
+                    Write-PlannerLog "    Kategorien gesetzt für Task '$($task.title)': $categoryNames" "OK"
+                }
+                catch {
+                    Write-PlannerLog "    Fehler beim Setzen der Kategorien: $_" "WARN"
                 }
             }
         }
