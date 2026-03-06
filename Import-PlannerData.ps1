@@ -969,8 +969,8 @@ function Resolve-UserId {
         }
         
         # Domain-Migration Fallback: @gemeindeinformatik.onmicrosoft.com -> @hohenems.at (case-insensitive)
-        if (-not $resolvedId -and $upn -and $upn -match '@gemeindeinformatik\.onmicrosoft\.com$') {
-            $newUpn = $upn -replace '@[Gg]emeindeinformatik\.onmicrosoft\.com$', '@hohenems.at'
+        if (-not $resolvedId -and $upn -and $upn -imatch '@gemeindeinformatik\.onmicrosoft\.com$') {
+            $newUpn = $upn -ireplace '@gemeindeinformatik\.onmicrosoft\.com$', '@hohenems.at'
             Write-PlannerLog "  Versuche Domain-Migration: $upn -> $newUpn" "INFO"
             try {
                 $user = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/users/$newUpn`?`$select=id" -OutputType PSObject -ErrorAction SilentlyContinue
