@@ -902,22 +902,31 @@ function Test-TargetGroup {
 function Resolve-UserId {
     param([string]$OldUserId, [hashtable]$OldUserMap)
 
+    # Cache-Version: Erhöhen wenn sich Lookup-Logik ändert (z.B. neue Domain-Migration)
+    $cacheVersion = 2  # v2: Domain-Migration mit -imatch (case-insensitive)
+
     # Track resolution attempt
     $script:errorTracker.UserResolution.Attempted++
 
     # Check cache first (nur für erfolgreiche Auflösungen)
     if ($script:userResolveCache.ContainsKey($OldUserId)) {
         $cached = $script:userResolveCache[$OldUserId]
+        $cachedVersion = if ($cached.Version) { $cached.Version } else { 1 }
         
-        if ($cached.Status -eq "Success") {
-            $script:errorTracker.UserResolution.CacheHits++
-            return $cached.NewUserId
+        # Cache nur verwenden wenn Version übereinstimmt
+        if ($cachedVersion -eq $cacheVersion) {
+            if ($cached.Status -eq "Success") {
+                $script:errorTracker.UserResolution.CacheHits++
+                return $cached.NewUserId
+            }
+            elseif ($cached.Status -eq "Failed_Complete") {
+                # Komplette Auflösung (inkl. Domain-Migration) bereits fehlgeschlagen
+                $script:errorTracker.UserResolution.CacheHits++
+                return $null
+            }
         }
-        elseif ($cached.Status -eq "Failed_Complete") {
-            # Komplette Auflösung (inkl. Domain-Migration) bereits fehlgeschlagen
-            $script:errorTracker.UserResolution.CacheHits++
-            return $null
-        }
+        # Bei alter Cache-Version: Ignorieren und neu versuchen
+    }
         # Bei "Failed" ohne "_Complete": Cache ignorieren und nochmal versuchen
         # (Domain-Migration könnte noch nicht versucht worden sein)
     }
@@ -1004,6 +1013,7 @@ function Resolve-UserId {
             NewUserId = $resolvedId
             Status = "Success"
             Timestamp = Get-Date
+            Version = $cacheVersion
         }
         $script:errorTracker.UserResolution.Succeeded++
         return $resolvedId
@@ -1015,6 +1025,7 @@ function Resolve-UserId {
             NewUserId = $null
             Status = "Failed_Complete"
             Timestamp = Get-Date
+            Version = $cacheVersion
         }
 
         # Add to error tracker
