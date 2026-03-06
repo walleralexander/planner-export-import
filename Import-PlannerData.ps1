@@ -543,10 +543,15 @@ function Get-OrCreateWarningCategory {
 
     try {
         $planDetails = Invoke-GraphWithRetry -Method GET -Uri "https://graph.microsoft.com/v1.0/planner/plans/$PlanId/details"
+        
+        # Hashtable explizit aufbauen (Variable als Key)
+        $bodyObj = @{ categoryDescriptions = @{} }
+        $bodyObj.categoryDescriptions[$freeSlot] = "⚠ Import-Fehler"
+        
         $patchParams = @{
             Method      = "PATCH"
             Uri         = "https://graph.microsoft.com/v1.0/planner/plans/$PlanId/details"
-            Body        = (@{ categoryDescriptions = @{ $freeSlot = "⚠ Import-Fehler" } } | ConvertTo-Json -Depth 5)
+            Body        = ($bodyObj | ConvertTo-Json -Depth 5)
             ContentType = "application/json"
             Headers     = @{ "If-Match" = $planDetails.'@odata.etag' }
             OutputType  = "PSObject"
@@ -1370,10 +1375,15 @@ function Import-PlanFromJson {
                 if ($warningCategoryKey) {
                     try {
                         $taskForEtag = Invoke-GraphWithRetry -Method GET -Uri "https://graph.microsoft.com/v1.0/planner/tasks/$($newTask.id)"
+                        
+                        # Hashtable explizit aufbauen (Variable als Key)
+                        $bodyObj = @{ appliedCategories = @{} }
+                        $bodyObj.appliedCategories[$warningCategoryKey] = $true
+                        
                         $warnParams = @{
                             Method      = "PATCH"
                             Uri         = "https://graph.microsoft.com/v1.0/planner/tasks/$($newTask.id)"
-                            Body        = (@{ appliedCategories = @{ $warningCategoryKey = $true } } | ConvertTo-Json -Depth 5)
+                            Body        = ($bodyObj | ConvertTo-Json -Depth 5)
                             ContentType = "application/json"
                             Headers     = @{ "If-Match" = $taskForEtag.'@odata.etag' }
                             OutputType  = "PSObject"
