@@ -152,6 +152,10 @@ function Test-SafePath {
 
     # 3. Pfad normalisieren (Relative Pfade auflösen, .. entfernen)
     try {
+        # Relative Pfade relativ zum PowerShell-Arbeitsverzeichnis auflösen
+        if (-not [System.IO.Path]::IsPathRooted($Path)) {
+            $Path = Join-Path (Get-Location).Path $Path
+        }
         $normalizedPath = [System.IO.Path]::GetFullPath($Path)
     }
     catch {
@@ -1221,7 +1225,8 @@ Write-Host "    - _ExportIndex.json       (Gesamtübersicht)" -ForegroundColor G
 Write-Host ""
 Write-PlannerLog "Export abgeschlossen. $($plans.Count) Pläne mit $totalTasks Tasks exportiert." "OK"
 
-Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+# Graph-Verbindung bleibt aktiv für weitere Befehle
+# Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
 
 } finally {
     Stop-Transcript -ErrorAction SilentlyContinue

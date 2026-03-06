@@ -192,6 +192,10 @@ function Test-SafePath {
 
     # 3. Pfad normalisieren (Relative Pfade auflösen, .. entfernen)
     try {
+        # Relative Pfade relativ zum PowerShell-Arbeitsverzeichnis auflösen
+        if (-not [System.IO.Path]::IsPathRooted($Path)) {
+            $Path = Join-Path (Get-Location).Path $Path
+        }
         $normalizedPath = [System.IO.Path]::GetFullPath($Path)
     }
     catch {
@@ -1643,6 +1647,7 @@ if ([string]::IsNullOrEmpty($ImportPath) -and -not $ListGroups) {
 
             Write-Host ''
             Write-Host "  $($exp.FolderName)" -ForegroundColor Cyan
+            Write-Host "    Speicherort: $($exp.Path)" -ForegroundColor Gray
             Write-Host "    Exportiert am: $dateStr" -ForegroundColor Gray
             if ($exp.ExportedBy) {
                 Write-Host "    Exportiert von: $($exp.ExportedBy)" -ForegroundColor Gray
@@ -1696,16 +1701,15 @@ if ([string]::IsNullOrEmpty($ImportPath) -and -not $ListGroups) {
     Write-Host ''
 }
 
-# Microsoft Graph Module und Verbindung
-Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
-
-if (-not (Connect-ToGraph)) {
-    Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph möglich." "ERROR"
-    exit 1
-}
-
-# Gruppen auflisten und beenden (-ListGroups benötigt Graph-Verbindung)
+# ListGroups-Modus: Gruppen auflisten und beenden (benötigt keinen ImportPath)
 if ($ListGroups) {
+    Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
+    
+    if (-not (Connect-ToGraph)) {
+        Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph möglich." "ERROR"
+        exit 1
+    }
+    
     Write-Host ''
     Write-Host '============================================================' -ForegroundColor Cyan
     Write-Host '  M365-GRUPPEN IM TENANT' -ForegroundColor Cyan
@@ -1714,13 +1718,11 @@ if ($ListGroups) {
 
     $groups = Get-M365GroupsForListing
     if ($null -eq $groups) {
-        Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
         exit 1
     }
     if ($groups.Count -eq 0) {
         Write-Host '  Keine M365-Gruppen gefunden.' -ForegroundColor Yellow
         Write-Host ''
-        Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
         exit 0
     }
 
@@ -1740,12 +1742,13 @@ if ($ListGroups) {
     Write-Host 'Tipp: Gruppen-ID als Ziel angeben mit:' -ForegroundColor White
     Write-Host '  .\Import-PlannerData.ps1 -ImportPath "<Pfad>" -TargetGroupId "<ID>"' -ForegroundColor Gray
     Write-Host ''
+    Write-Host 'Graph-Verbindung bleibt aktiv für nachfolgende Befehle.' -ForegroundColor DarkGray
+    Write-Host ''
 
-    Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
     exit 0
 }
 
-# Validiere Import-Verzeichnis
+# Validiere Import-Verzeichnis (nur wenn nicht ListGroups)
 $pathValidationError = $null
 if (-not (Test-SafePath -Path $ImportPath -Mode Import -ErrorMessage ([ref]$pathValidationError))) {
     Write-Host ""
@@ -1753,15 +1756,12 @@ if (-not (Test-SafePath -Path $ImportPath -Mode Import -ErrorMessage ([ref]$path
     Write-Host ""
     exit 1
 }
-Write-PlannerLog "Import-Verzeichnis: $ImportPath"
 
 # Lade Index-Datei
 $indexPath = Join-Path $ImportPath "_ExportIndex.json"
+$indexData = $null
 if (Test-Path $indexPath) {
     $indexData = Get-Content $indexPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    Write-PlannerLog "Export-Index geladen. Export vom: $($indexData.ExportDate)"
-    Write-PlannerLog "Exportiert von: $($indexData.ExportedBy)"
-    Write-PlannerLog "Pläne im Export: $($indexData.TotalPlans)"
 }
 
 # JSON-Dateien finden
@@ -1769,8 +1769,128 @@ $jsonFiles = Get-ChildItem -Path $ImportPath -Filter "*.json" |
     Where-Object { $_.Name -ne "_ExportIndex.json" -and $_.Name -notmatch "ImportMapping" -and $_.Name -ne "import_errors.json" }
 
 if ($jsonFiles.Count -eq 0) {
-    Write-PlannerLog "Keine Export-Dateien gefunden in: $ImportPath" "ERROR"
+    Write-Host "" -ForegroundColor Red
+    Write-Host "Keine Export-Dateien gefunden in: $ImportPath" -ForegroundColor Red
+    Write-Host ""
     exit 1
+}
+
+# Im DryRun-Modus: Zeige detaillierte Übersicht der zu importierenden Daten
+if ($DryRun) {
+    Write-Host '============================================================' -ForegroundColor Cyan
+    Write-Host '  ÜBERSICHT DER ZU IMPORTIERENDEN DATEN (DRY RUN)' -ForegroundColor Cyan
+    Write-Host '============================================================' -ForegroundColor Cyan
+    Write-Host ''
+    Write-Host "Speicherort: $ImportPath" -ForegroundColor Gray
+    
+    if ($indexData) {
+        $dateStr = if ($indexData.ExportDate) {
+            try { ([datetime]$indexData.ExportDate).ToString('dd.MM.yyyy HH:mm:ss') } catch { $indexData.ExportDate }
+        } else { 'Datum unbekannt' }
+        Write-Host "Exportiert am: $dateStr" -ForegroundColor Gray
+        if ($indexData.ExportedBy) {
+            Write-Host "Exportiert von: $($indexData.ExportedBy)" -ForegroundColor Gray
+        }
+    }
+    
+    Write-Host ''
+    Write-Host "Gefundene Pläne ($($jsonFiles.Count)):" -ForegroundColor White
+    Write-Host ''
+    
+    $totalTasks = 0
+    $totalBuckets = 0
+    $totalCompletedTasks = 0
+    $totalTasksWithAssignments = 0
+    
+    foreach ($jsonFile in $jsonFiles) {
+        try {
+            $planData = Get-Content $jsonFile.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+            $planTitle = if ($planData.Plan.title) { $planData.Plan.title } else { $jsonFile.BaseName }
+            $groupName = if ($planData.Plan.groupDisplayName) { $planData.Plan.groupDisplayName } else { 'Gruppe unbekannt' }
+            $groupId = if ($planData.Plan.groupId) { $planData.Plan.groupId } else { 'ID unbekannt' }
+            
+            $taskCount = if ($planData.Tasks) { $planData.Tasks.Count } else { 0 }
+            $bucketCount = if ($planData.Buckets) { $planData.Buckets.Count } else { 0 }
+            $completedTasks = if ($planData.Tasks) { @($planData.Tasks | Where-Object { $_.percentComplete -eq 100 }).Count } else { 0 }
+            $tasksWithAssignments = if ($planData.Tasks) { @($planData.Tasks | Where-Object { $_.assignments -and $_.assignments.PSObject.Properties.Count -gt 0 }).Count } else { 0 }
+            
+            Write-Host "  - $planTitle" -ForegroundColor Cyan
+            Write-Host "      Gruppe: $groupName" -ForegroundColor Gray
+            Write-Host "      Gruppen-ID: $groupId" -ForegroundColor DarkGray
+            Write-Host "      Buckets: $bucketCount" -ForegroundColor White
+            Write-Host "      Tasks: $taskCount" -ForegroundColor White
+            
+            if ($completedTasks -gt 0) {
+                Write-Host "        davon abgeschlossen: $completedTasks" -ForegroundColor Gray
+            }
+            if ($tasksWithAssignments -gt 0) {
+                Write-Host "        davon mit Zuweisungen: $tasksWithAssignments" -ForegroundColor Gray
+            }
+            
+            $totalTasks += $taskCount
+            $totalBuckets += $bucketCount
+            $totalCompletedTasks += $completedTasks
+            $totalTasksWithAssignments += $tasksWithAssignments
+            
+            Write-Host ''
+        }
+        catch {
+            Write-Host "  - $($jsonFile.Name)" -ForegroundColor Yellow
+            Write-Host "      (Fehler beim Lesen der Datei)" -ForegroundColor DarkGray
+            Write-Host ''
+        }
+    }
+    
+    Write-Host '------------------------------------------------------------' -ForegroundColor DarkGray
+    Write-Host "Gesamt: $($jsonFiles.Count) Plan/Pläne  |  $totalBuckets Buckets  |  $totalTasks Tasks" -ForegroundColor Yellow
+    if ($totalCompletedTasks -gt 0) {
+        Write-Host "  davon abgeschlossen: $totalCompletedTasks Tasks" -ForegroundColor Gray
+    }
+    if ($totalTasksWithAssignments -gt 0) {
+        Write-Host "  davon mit Zuweisungen: $totalTasksWithAssignments Tasks" -ForegroundColor Gray
+    }
+    Write-Host ''
+    
+    if ($TargetGroupId) {
+        Write-Host "Zielgruppe: $TargetGroupId" -ForegroundColor White
+    } else {
+        Write-Host "Zielgruppe: Originalgruppe aus Export" -ForegroundColor White
+    }
+    
+    if ($SkipAssignments) {
+        Write-Host "Option: Zuweisungen werden übersprungen" -ForegroundColor Yellow
+    }
+    if ($SkipCompletedTasks) {
+        Write-Host "Option: Abgeschlossene Tasks werden übersprungen" -ForegroundColor Yellow
+    }
+    if ($UserMapping -and $UserMapping.Count -gt 0) {
+        Write-Host "Option: Benutzer-Mapping aktiv ($($UserMapping.Count) Zuordnung(en))" -ForegroundColor Yellow
+    }
+    
+    Write-Host ''
+    Write-Host '------------------------------------------------------------' -ForegroundColor DarkGray
+    Write-Host 'Import starten mit:' -ForegroundColor White
+    Write-Host "  .\Import-PlannerData.ps1 -ImportPath \"$ImportPath\"" -ForegroundColor Gray
+    Write-Host ''
+    
+    exit 0
+}
+
+# Microsoft Graph Module und Verbindung (nur wenn nicht DryRun)
+Import-Module Microsoft.Graph.Authentication -ErrorAction SilentlyContinue
+
+if (-not (Connect-ToGraph)) {
+    Write-PlannerLog "Abbruch: Keine Verbindung zu Microsoft Graph möglich." "ERROR"
+    exit 1
+}
+
+# JSON-Dateien wurden bereits oben geladen und validiert
+Write-PlannerLog "Import-Verzeichnis: $ImportPath"
+
+if ($indexData) {
+    Write-PlannerLog "Export-Index geladen. Export vom: $($indexData.ExportDate)"
+    Write-PlannerLog "Exportiert von: $($indexData.ExportedBy)"
+    Write-PlannerLog "Pläne im Export: $($indexData.TotalPlans)"
 }
 
 Write-Host ""
@@ -1877,7 +1997,8 @@ if ($DryRun) {
 }
 
 Write-PlannerLog "Import abgeschlossen mit Exit-Code: $exitCode"
-Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+# Graph-Verbindung bleibt aktiv für weitere Befehle
+# Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
 
 exit $exitCode
 
