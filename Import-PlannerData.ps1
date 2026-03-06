@@ -963,10 +963,12 @@ function Resolve-UserId {
 
         # Try Mail lookup if UPN failed
         if (-not $resolvedId -and $mail -and $mail -ne $upn) {
+            Write-PlannerLog "  Versuche Mail-Lookup: $mail" "INFO"
             try {
                 $user = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/users/$mail`?`$select=id" -OutputType PSObject -ErrorAction SilentlyContinue
                 if ($user -and $user.id) {
                     $resolvedId = $user.id
+                    Write-PlannerLog "  ✓ Benutzer per Mail gefunden: $mail" "OK"
                 }
             }
             catch {
@@ -984,10 +986,16 @@ function Resolve-UserId {
                     $resolvedId = $user.id
                     Write-PlannerLog "  ✓ Benutzer nach Domain-Migration gefunden: $newUpn" "OK"
                 }
+                else {
+                    Write-PlannerLog "  Domain-Migration: Benutzer existiert nicht: $newUpn" "WARN"
+                }
             }
             catch {
                 Write-PlannerLog "  Domain-Migration fehlgeschlagen für: $newUpn" "WARN"
             }
+        }
+        elseif ($upn -and $upn -imatch '@gemeindeinformatik\.onmicrosoft\.com$') {
+            Write-PlannerLog "  Domain-Migration übersprungen (Benutzer bereits gefunden: $resolvedId)" "INFO"
         }
     }
 
