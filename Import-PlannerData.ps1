@@ -1398,15 +1398,24 @@ function Import-PlanFromJson {
                 # Warn-Kategorie lazy initialisieren (nur beim ersten Problem)
                 if (-not $warningCategoryResolved) {
                     $warningCategoryResolved = $true
-                    $warningCategoryKey = Get-OrCreateWarningCategory -PlanId $newPlan.id -ExistingCategories $planData.Categories
+                    $result = Get-OrCreateWarningCategory -PlanId $newPlan.id -ExistingCategories $planData.Categories
+                    # Sicherstellen, dass Rückgabewert ein String ist (PowerShell kann Arrays erzeugen)
+                    if ($result) {
+                        $warningCategoryKey = [string]($result | Select-Object -First 1)
+                    } else {
+                        $warningCategoryKey = $null
+                    }
                 }
                 if ($warningCategoryKey) {
                     try {
                         $taskForEtag = Invoke-GraphWithRetry -Method GET -Uri "https://graph.microsoft.com/v1.0/planner/tasks/$($newTask.id)"
                         
+                        # Sicherstellen, dass CategoryKey definitiv ein String ist
+                        $categoryKeyString = [string]$warningCategoryKey
+                        
                         # Hashtable explizit aufbauen (Variable als Key)
                         $bodyObj = @{ appliedCategories = @{} }
-                        $bodyObj.appliedCategories[$warningCategoryKey] = $true
+                        $bodyObj.appliedCategories[$categoryKeyString] = $true
                         
                         # JSON-Body erstellen
                         $jsonBody = $bodyObj | ConvertTo-Json -Depth 5 -Compress
@@ -1424,7 +1433,8 @@ function Import-PlanFromJson {
                     }
                     catch {
                         Write-PlannerLog "    [DEBUG] Warn-Label Fehler Details:" "WARN"
-                        Write-PlannerLog "      - CategoryKey: '$warningCategoryKey' (Typ: $($warningCategoryKey.GetType().Name))" "WARN"
+                        Write-PlannerLog "      - CategoryKey Original: '$warningCategoryKey' (Typ: $($warningCategoryKey.GetType().Name))" "WARN"
+                        Write-PlannerLog "      - CategoryKey String: '$categoryKeyString' (Typ: $($categoryKeyString.GetType().Name))" "WARN"
                         Write-PlannerLog "      - BodyObj.appliedCategories Keys: $($bodyObj.appliedCategories.Keys -join ', ')" "WARN"
                         Write-PlannerLog "      - BodyObj Typ: $($bodyObj.GetType().Name)" "WARN"
                         Write-PlannerLog "      - BodyObj.appliedCategories Typ: $($bodyObj.appliedCategories.GetType().Name)" "WARN"
