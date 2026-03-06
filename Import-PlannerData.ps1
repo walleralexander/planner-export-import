@@ -927,9 +927,6 @@ function Resolve-UserId {
         }
         # Bei alter Cache-Version: Ignorieren und neu versuchen
     }
-        # Bei "Failed" ohne "_Complete": Cache ignorieren und nochmal versuchen
-        # (Domain-Migration könnte noch nicht versucht worden sein)
-    }
 
     # UserMapping has highest priority
     if ($UserMapping -and $UserMapping.ContainsKey($OldUserId)) {
