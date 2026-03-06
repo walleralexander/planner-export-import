@@ -548,10 +548,13 @@ function Get-OrCreateWarningCategory {
         $bodyObj = @{ categoryDescriptions = @{} }
         $bodyObj.categoryDescriptions[$freeSlot] = "⚠ Import-Fehler"
         
+        # JSON-Body erstellen
+        $jsonBody = $bodyObj | ConvertTo-Json -Depth 5 -Compress
+        
         $patchParams = @{
             Method      = "PATCH"
             Uri         = "https://graph.microsoft.com/v1.0/planner/plans/$PlanId/details"
-            Body        = ($bodyObj | ConvertTo-Json -Depth 5)
+            Body        = $jsonBody
             ContentType = "application/json"
             Headers     = @{ "If-Match" = $planDetails.'@odata.etag' }
             OutputType  = "PSObject"
@@ -561,7 +564,17 @@ function Get-OrCreateWarningCategory {
         return $freeSlot
     }
     catch {
-        Write-PlannerLog "  Fehler beim Erstellen des Warn-Labels: $_" "WARN"
+        Write-PlannerLog "  [DEBUG] Warn-Label Erstellung Fehler Details:" "WARN"
+        Write-PlannerLog "    - FreeSlot: '$freeSlot' (Typ: $($freeSlot.GetType().Name))" "WARN"
+        Write-PlannerLog "    - BodyObj.categoryDescriptions Keys: $($bodyObj.categoryDescriptions.Keys -join ', ')" "WARN"
+        Write-PlannerLog "    - BodyObj Typ: $($bodyObj.GetType().Name)" "WARN"
+        Write-PlannerLog "    - BodyObj.categoryDescriptions Typ: $($bodyObj.categoryDescriptions.GetType().Name)" "WARN"
+        Write-PlannerLog "    - JSON Body: $jsonBody" "WARN"
+        Write-PlannerLog "    - Fehlermeldung: $_" "WARN"
+        Write-PlannerLog "    - Exception Typ: $($_.Exception.GetType().FullName)" "WARN"
+        if ($_.Exception.InnerException) {
+            Write-PlannerLog "    - Inner Exception: $($_.Exception.InnerException.Message)" "WARN"
+        }
         return $null
     }
 }
@@ -1007,6 +1020,9 @@ function Import-PlanFromJson {
 
     $planTitle = $planData.Plan.title
     $originalGroupId = $planData.Plan.groupId
+    
+    # Liste für fehlende Benutzerzuweisungen
+    $missingUsers = [System.Collections.Generic.List[PSCustomObject]]::new()
 
     # Zielgruppe bestimmen
     $groupId = if ($TargetGroupId) { $TargetGroupId } else { $originalGroupId }
@@ -1275,8 +1291,20 @@ function Import-PlanFromJson {
                 }
                 else {
                     $userName = if ($userMap[$_.Name]) { $userMap[$_.Name].DisplayName } else { $_.Name }
+                    $userUPN = if ($userMap[$_.Name]) { $userMap[$_.Name].UserPrincipalName } else { 'Unbekannt' }
                     Write-PlannerLog "    Benutzer konnte nicht zugewiesen werden: $userName" "WARN"
                     $taskHasIssues = $true
+                    
+                    # Für späteres Reporting sammeln
+                    $missingUsers.Add([PSCustomObject]@{
+                        PlanName = $planTitle
+                        BucketName = $bucket.name
+                        TaskTitle = $task.title
+                        TaskId = $newTask.id
+                        FehlenderBenutzer = $userName
+                        BenutzerUPN = $userUPN
+                        BenutzerAltId = $_.Name
+                    })
                 }
             }
             if ($assignments.Count -gt 0) {
@@ -1380,10 +1408,13 @@ function Import-PlanFromJson {
                         $bodyObj = @{ appliedCategories = @{} }
                         $bodyObj.appliedCategories[$warningCategoryKey] = $true
                         
+                        # JSON-Body erstellen
+                        $jsonBody = $bodyObj | ConvertTo-Json -Depth 5 -Compress
+                        
                         $warnParams = @{
                             Method      = "PATCH"
                             Uri         = "https://graph.microsoft.com/v1.0/planner/tasks/$($newTask.id)"
-                            Body        = ($bodyObj | ConvertTo-Json -Depth 5)
+                            Body        = $jsonBody
                             ContentType = "application/json"
                             Headers     = @{ "If-Match" = $taskForEtag.'@odata.etag' }
                             OutputType  = "PSObject"
@@ -1392,7 +1423,17 @@ function Import-PlanFromJson {
                         Write-PlannerLog "    Warn-Label gesetzt für: $($task.title)" "WARN"
                     }
                     catch {
-                        Write-PlannerLog "    Fehler beim Setzen des Warn-Labels: $_" "WARN"
+                        Write-PlannerLog "    [DEBUG] Warn-Label Fehler Details:" "WARN"
+                        Write-PlannerLog "      - CategoryKey: '$warningCategoryKey' (Typ: $($warningCategoryKey.GetType().Name))" "WARN"
+                        Write-PlannerLog "      - BodyObj.appliedCategories Keys: $($bodyObj.appliedCategories.Keys -join ', ')" "WARN"
+                        Write-PlannerLog "      - BodyObj Typ: $($bodyObj.GetType().Name)" "WARN"
+                        Write-PlannerLog "      - BodyObj.appliedCategories Typ: $($bodyObj.appliedCategories.GetType().Name)" "WARN"
+                        Write-PlannerLog "      - JSON Body: $jsonBody" "WARN"
+                        Write-PlannerLog "      - Fehlermeldung: $_" "WARN"
+                        Write-PlannerLog "      - Exception Typ: $($_.Exception.GetType().FullName)" "WARN"
+                        if ($_.Exception.InnerException) {
+                            Write-PlannerLog "      - Inner Exception: $($_.Exception.InnerException.Message)" "WARN"
+                        }
                     }
                 }
             }
@@ -1420,6 +1461,34 @@ function Import-PlanFromJson {
     }
     catch {
         Write-PlannerLog "Fehler beim Schreiben der Mapping-Datei: $_" "ERROR"
+    }
+    
+    # Fehlende Benutzer in separate Datei schreiben
+    if ($missingUsers.Count -gt 0) {
+        $missingUsersFile = "$ImportPath\${planFileName}_Fehlende_Benutzer.csv"
+        try {
+            # CSV mit direkten Task-Links erstellen
+            $csvContent = [System.Collections.Generic.List[string]]::new()
+            $csvContent.Add('"Plan";"Bucket";"Task";"Fehlender Benutzer";"Benutzer UPN";"Task-Link"')
+            
+            foreach ($item in $missingUsers) {
+                $taskUrl = "https://tasks.office.com/" + $groupId + "/Home/Task/" + $item.TaskId
+                $line = '"{0}";"{1}";"{2}";"{3}";"{4}";"{5}"' -f `
+                    $item.PlanName, `
+                    $item.BucketName, `
+                    $item.TaskTitle, `
+                    $item.FehlenderBenutzer, `
+                    $item.BenutzerUPN, `
+                    $taskUrl
+                $csvContent.Add($line)
+            }
+            
+            $csvContent | Out-File -FilePath $missingUsersFile -Encoding UTF8 -Force
+            Write-PlannerLog "Fehlende Benutzer protokolliert: $missingUsersFile ($($missingUsers.Count) Einträge)" "WARN"
+        }
+        catch {
+            Write-PlannerLog "Fehler beim Schreiben der fehlenden Benutzer: $_" "ERROR"
+        }
     }
 
     return @{
@@ -1993,6 +2062,37 @@ else {
         Write-Host "        Buckets: $($r.BucketsCreated)   Tasks: $($r.TasksCreated)" -ForegroundColor Gray
     }
     Write-Host ""
+
+    # Fehlende Benutzer-Zusammenfassung
+    $missingUserFiles = Get-ChildItem -Path $ImportPath -Filter "*_Fehlende_Benutzer.csv" -ErrorAction SilentlyContinue
+    if ($missingUserFiles -and $missingUserFiles.Count -gt 0) {
+        Write-Host ""
+        Write-Host "  ⚠ FEHLENDE BENUTZERZUWEISUNGEN" -ForegroundColor Yellow
+        Write-Host "  ══════════════════════════════════════════════════════" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "  Bei einigen Tasks konnten Benutzer nicht zugewiesen werden." -ForegroundColor White
+        Write-Host "  Details in folgenden Dateien (mit Excel öffnen):" -ForegroundColor White
+        Write-Host ""
+        
+        foreach ($file in $missingUserFiles) {
+            $lineCount = (Get-Content $file.FullName -Encoding UTF8 | Measure-Object -Line).Lines - 1  # -1 für Header
+            Write-Host "    📄 $($file.Name)" -ForegroundColor Cyan
+            Write-Host "       $lineCount fehlende Zuweisung(en)" -ForegroundColor Gray
+            Write-Host "       $($file.FullName)" -ForegroundColor DarkGray
+            Write-Host ""
+        }
+        
+        Write-Host "  Die CSV-Dateien enthalten:" -ForegroundColor White
+        Write-Host "    • Plan- und Task-Namen zur Orientierung" -ForegroundColor Gray
+        Write-Host "    • Direkte Links zu den Tasks (klickbar in Excel)" -ForegroundColor Gray
+        Write-Host "    • Namen der fehlenden Benutzer" -ForegroundColor Gray
+        Write-Host ""
+        Write-Host "  Anleitung:" -ForegroundColor White
+        Write-Host "    1. CSV-Datei mit Excel öffnen (Trennzeichen: Semikolon)" -ForegroundColor Gray
+        Write-Host "    2. Task-Link anklicken → Task öffnet sich in Planner" -ForegroundColor Gray
+        Write-Host "    3. Richtigen Benutzer manuell zuweisen" -ForegroundColor Gray
+        Write-Host ""
+    }
 
     # Cache statistics
     Write-CacheStatistics
