@@ -905,18 +905,21 @@ function Resolve-UserId {
     # Track resolution attempt
     $script:errorTracker.UserResolution.Attempted++
 
-    # Check cache first
+    # Check cache first (nur für erfolgreiche Auflösungen)
     if ($script:userResolveCache.ContainsKey($OldUserId)) {
-        $script:errorTracker.UserResolution.CacheHits++
         $cached = $script:userResolveCache[$OldUserId]
-
+        
         if ($cached.Status -eq "Success") {
+            $script:errorTracker.UserResolution.CacheHits++
             return $cached.NewUserId
         }
-        else {
-            # Previous lookup failed, don't retry
+        elseif ($cached.Status -eq "Failed_Complete") {
+            # Komplette Auflösung (inkl. Domain-Migration) bereits fehlgeschlagen
+            $script:errorTracker.UserResolution.CacheHits++
             return $null
         }
+        # Bei "Failed" ohne "_Complete": Cache ignorieren und nochmal versuchen
+        # (Domain-Migration könnte noch nicht versucht worden sein)
     }
 
     # UserMapping has highest priority
@@ -1007,9 +1010,10 @@ function Resolve-UserId {
     }
     else {
         # Cache the failure to avoid repeated lookups
+        # Status "Failed_Complete" bedeutet: Alle Strategien inkl. Domain-Migration wurden versucht
         $script:userResolveCache[$OldUserId] = @{
             NewUserId = $null
-            Status = "Failed"
+            Status = "Failed_Complete"
             Timestamp = Get-Date
         }
 
