@@ -964,6 +964,22 @@ function Resolve-UserId {
                 Write-PlannerLog "  Warnung: Benutzer konnte nicht per Mail gefunden werden: $mail" "WARN"
             }
         }
+        
+        # Domain-Migration Fallback: @gemeindeinformatik.onmicrosoft.com -> @hohenems.at (case-insensitive)
+        if (-not $resolvedId -and $upn -and $upn -match '@gemeindeinformatik\.onmicrosoft\.com$') {
+            $newUpn = $upn -replace '@[Gg]emeindeinformatik\.onmicrosoft\.com$', '@hohenems.at'
+            Write-PlannerLog "  Versuche Domain-Migration: $upn -> $newUpn" "INFO"
+            try {
+                $user = Invoke-MgGraphRequest -Method GET -Uri "https://graph.microsoft.com/v1.0/users/$newUpn`?`$select=id" -OutputType PSObject -ErrorAction SilentlyContinue
+                if ($user -and $user.id) {
+                    $resolvedId = $user.id
+                    Write-PlannerLog "  ✓ Benutzer nach Domain-Migration gefunden: $newUpn" "OK"
+                }
+            }
+            catch {
+                Write-PlannerLog "  Domain-Migration fehlgeschlagen für: $newUpn" "WARN"
+            }
+        }
     }
 
     # Fallback: Try original ID
@@ -1352,6 +1368,7 @@ function Import-PlanFromJson {
                 # Referenzen/Links
                 if ($detail.references) {
                     $references = @{}
+                    $refCount = 0
                     $detail.references.PSObject.Properties | ForEach-Object {
                         $url = $_.Name
                         $references[$url] = @{
@@ -1359,12 +1376,23 @@ function Import-PlanFromJson {
                             alias         = $_.Value.alias
                             type          = $_.Value.type
                         }
+                        $refCount++
                         # previewPriority absichtlich nicht übernehmen: exportierte Werte
                         # sind mandantenspezifische orderHints und im Ziel-Tenant ungültig
                     }
                     if ($references.Count -gt 0) {
                         $detailBody["references"] = $references
                         $hasDetails = $true
+                        
+                        # Hinweis in Description einfügen, wenn Dateianhänge vorhanden sind
+                        $attachmentHint = "`n`n⚠️ HINWEIS: Dieser Task hatte $refCount verknüpfte(s) Dokument(e)/Link(s) im Original. Bitte prüfen und ggf. aktualisieren."
+                        if ($detailBody.ContainsKey("description")) {
+                            $detailBody["description"] = $detailBody["description"] + $attachmentHint
+                        } else {
+                            $detailBody["description"] = $attachmentHint.TrimStart()
+                            $detailBody["previewType"] = "description"
+                        }
+                        Write-PlannerLog "    ℹ Task hat $refCount Referenz(en) - Hinweis zur Description hinzugefügt" "INFO"
                     }
                 }
 
