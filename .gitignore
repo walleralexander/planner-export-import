@@ -4,9 +4,8 @@ planner-data/
 *.json.backup
 
 # Logs
-*.log
-export.log
-import.log
+logs/*
+!logs/.gitkeep
 
 # Temporary files
 *.tmp

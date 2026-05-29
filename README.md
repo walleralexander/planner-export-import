@@ -1,75 +1,16 @@
 # Microsoft Planner Export/Import Tool
 
-![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?logo=powershell)
-![License](https://img.shields.io/badge/License-MIT-green.svg)
+![PowerShell](https://img.shields.io/badge/PowerShell-5.1%2B-blue?logo=powershell)
 ![Microsoft Graph](https://img.shields.io/badge/Microsoft%20Graph-API-orange)
-![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
-![Tests](https://img.shields.io/badge/Tests-93%2F97%20passing-green)
-![Code Quality](https://img.shields.io/badge/Code%20Quality-8.2%2F10-yellowgreen)
+![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
 
----
-
-> ⚠️ **WICHTIG:** Bitte lesen Sie die [WARNING.md](WARNING.md) für wichtige Hinweise zu Haftungsausschluss und Testumgebung!
-> 📋 **CODE REVIEW:** Siehe [CODE_REVIEW_SUMMARY.md](CODE_REVIEW_SUMMARY.md) für Code-Qualitätsanalyse und Verbesserungsvorschläge
-
----
-
-## 🆕 Neu in Version 1.1.0 (Februar 2026)
-
-### Flexible Export-Modi
-
-Das Export-Skript unterstützt jetzt **zwei verschiedene Modi**:
-
-1. **👤 User-basiert** (`-UseCurrentUser`): Exportiert alle Pläne des aktuell angemeldeten Benutzers
-
-   ```powershell
-   .\Export-PlannerData.ps1 -UseCurrentUser
-   ```
-
-2. **🏢 Gruppen-basiert**: Exportiert Pläne aus spezifischen M365-Gruppen/SharePoint-Seiten
-
-   - **Nach Gruppennamen** (`-GroupNames`): Sucht Gruppen nach ihrem Display-Namen
-
-     ```powershell
-     .\Export-PlannerData.ps1 -GroupNames "Projektteam Alpha", "Marketing"
-     ```
-
-   - **Nach Gruppen-IDs** (`-GroupIds`): Direkte Angabe von Gruppen-IDs
-
-     ```powershell
-     .\Export-PlannerData.ps1 -GroupIds "abc123-...", "def456-..."
-     ```
-
-   - **Interaktiv** (`-Interactive`): Zeigt alle verfügbaren Gruppen zur Auswahl an
-
-     ```powershell
-     .\Export-PlannerData.ps1 -Interactive
-     ```
-
-### Weitere Verbesserungen
-
-- ✅ Korrekte Umlaut-Darstellung in allen Ausgaben
-- ✅ Verbesserte Fehlerprüfung und Null-Validierung
-- ✅ Detailliertere Log-Meldungen mit Statusangaben
-- ✅ Bessere Behandlung von fehlenden oder ungültigen Gruppen
-
-### Bugfixes (Februar 2026)
-
-- ✅ PowerShell ISE Erkennung: Warnung und automatische WAM-Deaktivierung
-- ✅ Graph API Fix: `$orderby` mit `groupTypes/any()` Filter verursachte HTTP 400 – jetzt client-seitige Sortierung
-- ✅ DateTime-Parsing: `[DateTimeOffset]::Parse()` mit Fehlerbehandlung statt `[DateTime]::Parse()` (Locale-unabhängig)
-- ✅ Export-Zusammenfassung: `[PSCustomObject]` statt Hashtable für korrekte `Measure-Object`-Auswertung
-- ✅ Gruppenauswahl zeigt jetzt auch die Group-ID an (für direkte Verwendung mit `-GroupIds`)
-- ✅ Auth-Fehler verwenden `throw` statt `exit 1` (zuverlässigere Skript-Terminierung in ISE)
-- ✅ NOCOMMENTS-Variante wird synchron zur Hauptdatei gehalten
+Erstellt von Alexander Waller · Hohenems Informatik
 
 ---
 
 ## Übersicht
 
-Dieses Toolset ermöglicht den fast vollständigen Export und Import von Microsoft Planner-Daten
-über die Microsoft Graph API. Es wurde speziell für den Lizenzwechsel erstellt, um
-Datenverluste zu vermeiden.
+Dieses Tool ermöglicht den vollständigen Export und Import von Microsoft Planner-Daten über die Microsoft Graph API. Hauptanwendungsfall ist die Datensicherung vor Lizenzwechseln sowie die Migration von Plänen zwischen M365-Gruppen oder Tenants.
 
 ### Was wird exportiert/importiert?
 
@@ -90,12 +31,16 @@ Datenverluste zu vermeiden.
 | Kommentare | ❌ ** | ❌ |
 | Dateianhänge | ✅ (als Link) | ✅ (als Link) |
 
-\* Zuweisungen funktionieren nur wenn die Benutzer im neuen Tenant existieren (gleiche UPN/Mail)  
+\* Zuweisungen funktionieren nur wenn die Benutzer im Ziel-Tenant mit gleicher UPN/Mail existieren
 \** Kommentare sind über die Planner API nicht zugänglich (werden in Exchange gespeichert)
 
 ---
 
 ## Voraussetzungen
+
+### 1. PowerShell
+
+PowerShell 5.1 (Windows vorinstalliert) wird unterstützt. PowerShell 7+ empfohlen:
 
 ```powershell
 winget install Microsoft.PowerShell
@@ -107,15 +52,13 @@ winget install Microsoft.PowerShell
 Install-Module Microsoft.Graph -Scope CurrentUser -Force
 ```
 
-### 3. Berechtigungen
+### 3. M365-Berechtigungen
 
-Beim ersten Ausführen wird ein Browser-Fenster für die Anmeldung geöffnet.
-Benötigte Berechtigungen (Delegated):
+Beim ersten Ausführen öffnet sich ein Browser-Fenster (oder Device-Code-Flow). Das angemeldete Konto benötigt:
 
-- `Group.Read.All` (Export) / `Group.ReadWrite.All` (Import)
-- `Tasks.Read` (Export) / `Tasks.ReadWrite` (Import)
-- `User.Read`
-- `User.ReadBasic.All`
+- **Export:** Mitgliedschaft in den zu exportierenden Gruppen
+- **Import:** Mitgliedschaft in den Zielgruppen + Recht zum Erstellen von Plänen
+- Admin-Consent für die erforderlichen Graph-Berechtigungen (siehe [CLOUD-SETUP.md](CLOUD-SETUP.md))
 
 ---
 
@@ -123,88 +66,51 @@ Benötigte Berechtigungen (Delegated):
 
 ### Export
 
-#### 👤 User-basierte Export (Alle eigenen Pläne)
-
 ```powershell
-# Alle Pläne des aktuellen Benutzers exportieren
+# Alle eigenen Pläne exportieren (empfohlen für einfache Fälle)
 .\Export-PlannerData.ps1 -UseCurrentUser
 
 # Mit abgeschlossenen Tasks
 .\Export-PlannerData.ps1 -UseCurrentUser -IncludeCompletedTasks
-```
 
-#### 🏢 Gruppen-basierte Export
-
-**Nach Gruppennamen:**
-
-```powershell
-# Eine Gruppe
-.\Export-PlannerData.ps1 -GroupNames "Projektteam Alpha"
-
-# Mehrere Gruppen
+# Bestimmte Gruppen nach Name
 .\Export-PlannerData.ps1 -GroupNames "Projektteam Alpha", "Marketing Team"
-```
 
-**Nach Gruppen-IDs:**
-
-```powershell
+# Bestimmte Gruppen nach ID
 .\Export-PlannerData.ps1 -GroupIds "abc123-...", "def456-..."
-```
 
-> **Tipp:** Die Gruppen-ID findet man in der URL wenn man die Gruppe in Outlook/Teams öffnet,
-> oder über das Azure AD Portal unter Gruppen.
-
-**Interaktive Auswahl:**
-
-```powershell
+# Interaktive Gruppenauswahl
 .\Export-PlannerData.ps1 -Interactive
-```
 
-> Zeigt eine Liste aller verfügbaren M365-Gruppen zur Auswahl an.
+# Ohne Parameter: zeigt alle Gruppen, fragt ob Auswahl oder alle exportieren
+.\Export-PlannerData.ps1
 
-#### Export in bestimmtes Verzeichnis
-
-```powershell
+# In bestimmtes Verzeichnis exportieren
 .\Export-PlannerData.ps1 -UseCurrentUser -ExportPath "C:\Backup\Planner"
 ```
 
-> Das Export-Verzeichnis wird automatisch ermittelt: `C:\temp`, `C:\tmp` oder der Dokumente-Ordner des Benutzers (in dieser Reihenfolge). Es kann mit `-ExportPath` überschrieben werden.
+> **Export-Verzeichnis:** Wird automatisch ermittelt: `C:\temp` → `C:\tmp` → Dokumente-Ordner.
+> Kann mit `-ExportPath` überschrieben werden.
 
 ### Import
 
-#### Alle exportierten Pläne importieren (gleiche Gruppen)
-
 ```powershell
+# Alle exportierten Pläne importieren (in Original-Gruppen)
 .\Import-PlannerData.ps1 -ImportPath ".\PlannerExport_20260209_143000"
-```
 
-#### In eine bestimmte Gruppe importieren
-
-```powershell
-.\Import-PlannerData.ps1 -ImportPath ".\PlannerExport_20260209_143000" -TargetGroupId "neue-gruppe-id"
-```
-
-#### Probelauf (Dry Run) - zeigt was gemacht würde
-
-```powershell
+# Probelauf (zeigt was gemacht würde, ohne Änderungen)
 .\Import-PlannerData.ps1 -ImportPath ".\PlannerExport_20260209_143000" -DryRun
-```
 
-#### Ohne Zuweisungen importieren
+# In eine bestimmte Zielgruppe importieren
+.\Import-PlannerData.ps1 -ImportPath ".\PlannerExport_20260209_143000" -TargetGroupId "neue-gruppe-id"
 
-```powershell
+# Ohne Zuweisungen importieren
 .\Import-PlannerData.ps1 -ImportPath ".\PlannerExport_20260209_143000" -SkipAssignments
-```
 
-#### Abgeschlossene Tasks beim Import überspringen
-
-```powershell
+# Abgeschlossene Tasks nicht importieren
 .\Import-PlannerData.ps1 -ImportPath ".\PlannerExport_20260209_143000" -SkipCompletedTasks
-```
 
-#### Benutzer-Mapping (wenn User-IDs sich ändern)
-
-```powershell
+# Mit Benutzer-Mapping (bei Tenant-Migration mit geänderten User-IDs)
 $mapping = @{
     "alte-user-id-1" = "neue-user-id-1"
     "alte-user-id-2" = "neue-user-id-2"
@@ -216,58 +122,47 @@ $mapping = @{
 
 ## Exportierte Dateien
 
-Nach dem Export enthält das Verzeichnis:
-
-```Text
+```text
 PlannerExport_20260209_143000/
-├── _ExportIndex.json                    # Gesamtübersicht aller exportierten Pläne
-├── export.log                           # Log-Datei des Exports
-├── Projektplanung_2026.json             # Strukturierte Daten (für Import)
-├── Projektplanung_2026_Zusammenfassung.txt  # Lesbare Textübersicht
+├── _ExportIndex.json                        # Metadaten: Datum, Konto, Planliste
+├── Projektplanung.json                      # Strukturierte Daten für Import
+├── Projektplanung_Zusammenfassung.txt       # Lesbare Textübersicht
 ├── IT_Infrastruktur.json
 ├── IT_Infrastruktur_Zusammenfassung.txt
 └── ...
-```
 
-- **JSON-Dateien**: Enthalten alle strukturierten Daten für den Re-Import
-- **Zusammenfassungs-Dateien**: Menschenlesbare Übersicht aller Tasks, Buckets etc.
-- **ExportIndex**: Metadaten über den gesamten Export
+logs/
+├── export_20260209_143000.log               # Vollständiges Protokoll je Export-Lauf
+└── import_20260209_150000.log               # Vollständiges Protokoll je Import-Lauf
+```
 
 ---
 
-## Empfohlene Vorgehensweise für den Lizenzwechsel
+## Empfohlene Vorgehensweise beim Lizenzwechsel
 
-1. **VOR dem Wechsel:**
+**1. Vor dem Wechsel — Export:**
 
-   ```powershell
-   # Alle Pläne des aktuellen Benutzers exportieren
-   .\Export-PlannerData.ps1 -UseCurrentUser -ExportPath "C:\Backup\Planner_PreMigration"
+```powershell
+.\Export-PlannerData.ps1 -UseCurrentUser -ExportPath "C:\Backup\Planner_VorWechsel"
+# Zusammenfassungen prüfen:
+Get-ChildItem "C:\Backup\Planner_VorWechsel\*Zusammenfassung*"
+```
 
-   # ODER: Spezifische Gruppen exportieren
-   .\Export-PlannerData.ps1 -GroupNames "Projektteam", "Marketing" -ExportPath "C:\Backup\Planner_PreMigration"
+**2. Export-Verzeichnis sichern** (Netzlaufwerk, ZIP, externer Speicher)
 
-   # Zusammenfassungen prüfen - stimmt alles?
-   Get-ChildItem "C:\Backup\Planner_PreMigration\*Zusammenfassung*"
-   ```
+**3. Nach dem Wechsel — Import:**
 
-2. **Backup sichern:**
-   - Export-Verzeichnis auf Netzlaufwerk oder externen Speicher kopieren
-   - Sicherheitshalber ZIP erstellen
+```powershell
+# Erst Probelauf:
+.\Import-PlannerData.ps1 -ImportPath "C:\Backup\Planner_VorWechsel" -DryRun
 
-3. **NACH dem Wechsel:**
+# Dann tatsächlicher Import:
+.\Import-PlannerData.ps1 -ImportPath "C:\Backup\Planner_VorWechsel"
+```
 
-   ```powershell
-   # Erst einen Probelauf:
-   .\Import-PlannerData.ps1 -ImportPath "C:\Backup\Planner_PreMigration" -DryRun
-   
-   # Wenn alles OK, Import starten:
-   .\Import-PlannerData.ps1 -ImportPath "C:\Backup\Planner_PreMigration"
-   ```
+**4. Stichproben prüfen:** Pläne in Teams öffnen, Buckets, Tasks, Beschreibungen, Checklisten prüfen
 
-4. **Stichproben prüfen:**
-   - Öffne die importierten Pläne in Planner
-   - Prüfe Buckets, Tasks, Beschreibungen, Checklisten
-   - Prüfe Zuweisungen und Fälligkeitsdaten
+> Tasks mit Import-Problemen (fehlende Zuweisung, ungültige Daten) werden automatisch mit dem Label **"⚠ Import-Fehler"** markiert und sind in Teams leicht filterbar.
 
 ---
 
@@ -275,96 +170,27 @@ PlannerExport_20260209_143000/
 
 | Problem | Lösung |
 | --- | --- |
-| "Insufficient privileges" | Azure AD Admin muss die App-Berechtigungen freigeben |
-| "429 Too Many Requests" | Script wartet automatisch, ggf. `-ThrottleDelayMs 1000` erhöhen |
-| Zuweisungen fehlen | Benutzer existieren nicht im Tenant → `-SkipAssignments` oder UserMapping |
-| Leerer Export | Prüfe ob der Account Planner-Lizenz hat und Mitglied der Gruppen ist |
-| Kommentare fehlen | Kommentare sind über die API nicht exportierbar (Exchange-basiert) |
-| "Unexpected token" / Parse-Fehler beim Start | Zeilenenden-Problem (LF statt CRLF) – siehe unten |
-| PowerShell ISE: Auth-Fehler / EventSourceException | ISE unterstützt WAM und Device Code nicht zuverlässig – verwende `pwsh.exe` oder `powershell.exe` |
-
-### Parse-Fehler: "Unexpected token" oder "Missing argument"
-
-Wenn das Script beim Start sofort mit Parse-Fehlern abbricht, obwohl die Datei korrekt aussieht:
-
-```text
-Unexpected token 'User-basiert:' in expression or statement.
-Missing argument in parameter list.
-```
-
-**Ursache:** PowerShell 5.1 auf Windows erwartet CRLF-Zeilenenden (`\r\n`). Wird die Datei
-mit LF-only (`\n`, typisch bei Downloads über Linux/macOS oder bestimmte Browser) gespeichert,
-erkennt PowerShell 5.1 den Block-Kommentar `<# ... #>` nicht korrekt und versucht,
-den Kommentarinhalt als Code zu parsen.
-
-**Lösung:** Datei neu von GitHub herunterladen. Das Repository enthält eine
-[`.gitattributes`](.gitattributes)-Datei, die CRLF-Zeilenenden für alle `.ps1`-Dateien
-erzwingt – ein frischer Download/Clone liefert automatisch die richtige Formatierung:
-
-```powershell
-# Option 1: Neu von GitHub klonen
-git clone https://github.com/walleralexander/planner-export-import.git
-
-# Option 2: Bestehenden Clone aktualisieren und Zeilenenden neu normalisieren
-git pull
-git rm --cached -r .
-git reset --hard HEAD
-```
-
-Alternativ lässt sich die Korrektur auch direkt in PowerShell durchführen:
-
-```powershell
-# Zeilenenden in einer einzelnen Datei auf CRLF setzen
-$file = "Export-PlannerData.ps1"
-$content = [System.IO.File]::ReadAllText($file)
-$content = $content.Replace("`r`n", "`n").Replace("`n", "`r`n")
-[System.IO.File]::WriteAllText($file, $content, [System.Text.UTF8Encoding]::new($true))
-```
+| 403 Forbidden beim Export | Konto ist kein Mitglied der Gruppe — oder Admin-Consent fehlt (siehe [CLOUD-SETUP.md](CLOUD-SETUP.md)) |
+| Zuweisungen fehlen nach Import | Benutzer existieren nicht im Tenant → `-SkipAssignments` oder `-UserMapping` verwenden |
+| 429 Too Many Requests | Script wartet automatisch — ggf. Throttle erhöhen |
+| Fälligkeitsdaten fehlen | Waren im Export enthalten, werden korrekt importiert (nur wenn StartDate ≤ DueDate) |
+| Kommentare fehlen | Über die Planner API nicht exportierbar (Exchange-basiert) |
+| Dateianhänge fehlen | Nur Links werden exportiert, Dateien selbst liegen in SharePoint |
+| Gruppe fehlt im Export | Konto ist nicht Mitglied → mit `-UseCurrentUser` nur eigene Gruppen exportieren |
 
 ---
 
 ## Einschränkungen
 
-- **Kommentare** werden in Exchange-Gruppen-Postfächern gespeichert und sind über die
-  Planner API nicht zugänglich
-- **Dateianhänge** werden nur als Link-Referenzen exportiert, nicht die Dateien selbst
-  (diese liegen in SharePoint)
-- **Aufgabenverläufe** (wer hat wann was geändert) werden nicht exportiert
-- **Rate Limits**: Microsoft Graph hat Begrenzungen von ~2000 Requests/Minute.
-  Das Script beinhaltet automatisches Throttling und Retry-Logik.
+- **Kommentare** — in Exchange gespeichert, über Planner API nicht zugänglich
+- **Dateianhänge** — nur als Link-Referenz, Dateien bleiben in SharePoint
+- **Aufgabenverläufe** — Änderungshistorie wird nicht exportiert
+- **Rate Limits** — ~2000 Requests/Minute; das Script beinhaltet Throttling und automatischen Retry
+- **Gruppen ohne Mitgliedschaft** — können nicht exportiert werden (403 Forbidden)
 
 ---
 
-## Tests
+## Weitere Dokumentation
 
-This project includes a comprehensive test suite with 59 unit tests covering both Export and Import functionality.
-
-### Running Tests
-
-```powershell
-# Quick test run
-Invoke-Pester -Path ./tests
-
-# Or use the test runner with detailed output
-pwsh ./tests/Run-Tests.ps1 -Detailed
-```
-
-### Test Coverage
-
-- **Export-PlannerData.ps1**: 21 tests covering logging, data export, file handling, and error scenarios
-- **Import-PlannerData.ps1**: 38 tests covering import logic, user mapping, dry-run mode, and data restoration
-- **Integration Tests**: Manual test scenarios documented for real-world validation
-
-For detailed information, see:
-
-- [tests/README.md](tests/README.md) - Test documentation and setup
-- [tests/USAGE.md](tests/USAGE.md) - Practical examples and CI/CD integration
-- [tests/Integration-Tests.ps1](tests/Integration-Tests.ps1) - Manual testing scenarios
-
----
-
-## Lizenz & Support
-
-Created by Alexander Waller, February 2026.
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+- [CLOUD-SETUP.md](CLOUD-SETUP.md) — M365/Azure AD Einrichtung für Administratoren
+- [FUNCTIONS.md](FUNCTIONS.md) — Funktionsreferenz beider Scripts
