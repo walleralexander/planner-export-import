@@ -767,6 +767,16 @@ function Import-PlanFromJson {
         }
     }
 
+    # TaskDetails als Hashtable aufbereiten (taskId → detail) für O(1)-Lookup statt O(n) pro Task
+    $taskDetailMap = @{}
+    if ($planData.TaskDetails) {
+        foreach ($td in $planData.TaskDetails) {
+            if ($td.taskId) {
+                $taskDetailMap[$td.taskId] = $td
+            }
+        }
+    }
+
     foreach ($task in $planData.Tasks) {
         $taskCounter++
         Write-Progress -Activity "Importiere Tasks für '$planTitle'" -Status "Task $taskCounter von ${totalTasks}: $($task.title)" -PercentComplete (($taskCounter / $totalTasks) * 100)
@@ -844,7 +854,7 @@ function Import-PlanFromJson {
             $script:errorTracker.Tasks.Succeeded++
 
             # 5. Task-Details setzen (Beschreibung, Checkliste, Referenzen)
-            $detail = $planData.TaskDetails | Where-Object { $_.taskId -eq $task.id }
+            $detail = $taskDetailMap[$task.id]
             if ($detail) {
                 $script:errorTracker.TaskDetails.Attempted++
                 $hasDetails = $false
